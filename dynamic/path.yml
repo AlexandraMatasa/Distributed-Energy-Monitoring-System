@@ -1,0 +1,37 @@
+http:
+  # Define URL routing rules, middlewares, and services
+  routers:
+    user-service:
+      rule: "Host(`localhost`) && PathPrefix(`/api1`)"
+      entryPoints:
+        - web # Listen on the web (HTTP) entry point
+      service: user-service # Forward to the user service
+      middlewares:
+        - strip-user
+
+    device-service:
+      rule: "Host(`localhost`) && PathPrefix(`/api2`)"
+      entryPoints:
+        - web # Listen on the web (HTTP) entry point
+      service: device-service
+      middlewares:
+        - strip-device
+
+  middlewares:
+    strip-user:
+      stripPrefix:
+        prefixes: ["/api1"]
+    strip-device:
+      stripPrefix:
+        prefixes: ["/api2"]
+
+  services:
+    user-service:
+      loadBalancer:
+        servers:
+          - url: "http://user-service:8080" # Container name solved by Docker DNS
+
+    device-service:
+      loadBalancer:
+        servers:
+          - url: "http://device-service:8081" # Container name solved by Docker DNS

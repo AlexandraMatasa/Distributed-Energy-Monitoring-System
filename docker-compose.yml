@@ -1,0 +1,95 @@
+version: '3.9'
+
+services:
+  user-db:
+    image: postgres:16
+    container_name: user-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: users-db
+    ports:
+      - "5433:5432"
+    volumes:
+      - user-db-data:/var/lib/postgresql/data
+    networks:
+      - proxy-network
+
+  device-db:
+    image: postgres:16
+    container_name: device-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: devices-db
+    ports:
+      - "5434:5432"
+    volumes:
+      - device-db-data:/var/lib/postgresql/data
+    networks:
+      - proxy-network
+
+  user-service:
+    build:
+      context: ./UserManagement
+      dockerfile: Dockerfile
+    container_name: user-service
+    depends_on:
+      - user-db
+    environment:
+      DB_IP: user-db
+      DB_PORT: 5432
+      DB_DBNAME: users-db
+      DB_USER: postgres
+      DB_PASSWORD: admin
+      DEVICE_SERVICE_URL: http://device-service:8081
+    networks:
+      - proxy-network
+    labels:
+      - "traefik.enable=true"
+
+  device-service:
+    build:
+      context: ./DeviceManagement
+      dockerfile: Dockerfile
+    container_name: device-service
+    depends_on:
+      - device-db
+    environment:
+      DB_IP: device-db
+      DB_PORT: 5432
+      DB_DBNAME: devices-db
+      DB_USER: postgres
+      DB_PASSWORD: admin
+    networks:
+      - proxy-network
+    labels:
+      - "traefik.enable=true"
+
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    restart: always
+    ports:
+      - "80:80" # The HTTP port
+      # - "443:443" # The HTTPS port
+      - "8082:8080" # Dashboard port
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro" # Traefik can listen to the Docker events
+      - "./traefik.yml:/etc/traefik/traefik.yml:ro" # Static configuration file
+      - "./dynamic:/etc/traefik/dynamic:ro" # Dynamic configuration files
+      - "./logs:/var/log/traefik" # Log files
+    networks:
+      - proxy-network
+
+
+# Define a shared network for all services
+networks:
+  proxy-network:
+    driver: bridge
+
+volumes:
+  user-db-data:
+  device-db-data:
