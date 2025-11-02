@@ -29,6 +29,9 @@ public class UserService {
     @Value("${device.service.url:http://localhost:8081}")
     private String deviceServiceUrl;
 
+    @Value("${auth.service.url:http://localhost:8083}")
+    private String authServiceUrl;
+
     @Autowired
     public UserService(UserRepository userRepository, RestTemplate restTemplate) {
         this.userRepository = userRepository;
@@ -102,6 +105,7 @@ public class UserService {
         userRepository.deleteById(id);
         LOGGER.debug("User with id {} was deleted from db", id);
 
+        notifyAuthServiceUserDeleted(id);
         notifyDeviceServiceUserDeleted(id);
     }
 
@@ -128,6 +132,19 @@ public class UserService {
             LOGGER.info("Device Service notified successfully");
         } catch (Exception e) {
             LOGGER.warn("Failed to notify Device Service: {}", e.getMessage());
+        }
+    }
+
+    private void notifyAuthServiceUserDeleted(UUID userId) {
+        try {
+            String url = authServiceUrl + "/auth/sync/user-deleted";
+            LOGGER.info("Notifying Auth Service about user {} deletion", userId);
+
+            restTemplate.postForEntity(url, userId, Void.class);
+
+            LOGGER.info("Auth Service notified successfully");
+        } catch (Exception e) {
+            LOGGER.warn("Failed to notify Auth Service: {}", e.getMessage());
         }
     }
 }
