@@ -19,11 +19,11 @@ import java.util.*;
 @Component
 public class JwtTokenUtil {
 
-    @Value("${jwt.private-key-path}")
-    private Resource privateKeyResource;
+    @Value("${jwt.private-key}")
+    private String privateKeyString;
 
-    @Value("${jwt.public-key-path}")
-    private Resource publicKeyResource;
+    @Value("${jwt.public-key}")
+    private String publicKeyString;
 
     @Value("${jwt.expiration:86400000}")
     private long expiration;
@@ -33,7 +33,7 @@ public class JwtTokenUtil {
 
     public String generateToken(UUID userId, String role) throws Exception {
         if (privateKey == null) {
-            privateKey = loadPrivateKey();
+            privateKey = loadPrivateKey(privateKeyString);
         }
 
         Map<String, Object> claims = new HashMap<>();
@@ -53,7 +53,7 @@ public class JwtTokenUtil {
 
     public Claims validateToken(String token) throws Exception {
         if (publicKey == null) {
-            publicKey = loadPublicKey();
+            publicKey = loadPublicKey(publicKeyString);
         }
 
         return Jwts.parser()
@@ -83,12 +83,10 @@ public class JwtTokenUtil {
         }
     }
 
-    private PrivateKey loadPrivateKey() throws Exception {
-        String key = new String(Files.readAllBytes(privateKeyResource.getFile().toPath()), StandardCharsets.UTF_8);
-
+    private PrivateKey loadPrivateKey(String key) throws Exception {
         key = key.replace("-----BEGIN PRIVATE KEY-----", "")
                 .replace("-----END PRIVATE KEY-----", "")
-                .replaceAll("\\s", "");
+                .replaceAll("\\s+", "");
 
         byte[] keyBytes = Base64.getDecoder().decode(key);
         PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(keyBytes);
@@ -97,12 +95,10 @@ public class JwtTokenUtil {
         return kf.generatePrivate(spec);
     }
 
-    private PublicKey loadPublicKey() throws Exception {
-        String key = new String(Files.readAllBytes(publicKeyResource.getFile().toPath()), StandardCharsets.UTF_8);
-
+    private PublicKey loadPublicKey(String key) throws Exception {
         key = key.replace("-----BEGIN PUBLIC KEY-----", "")
                 .replace("-----END PUBLIC KEY-----", "")
-                .replaceAll("\\s", "");
+                .replaceAll("\\s+", "");
 
         byte[] keyBytes = Base64.getDecoder().decode(key);
         X509EncodedKeySpec spec = new X509EncodedKeySpec(keyBytes);

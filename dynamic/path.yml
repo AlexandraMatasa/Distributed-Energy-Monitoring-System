@@ -8,6 +8,7 @@ http:
       service: user-service # Forward to the user service
       middlewares:
         - strip-user
+        - auth-middleware
 
     device-service:
       rule: "Host(`localhost`) && PathPrefix(`/api2`)"
@@ -16,6 +17,25 @@ http:
       service: device-service
       middlewares:
         - strip-device
+        - auth-middleware
+
+    auth-service-register:
+      rule: "Host(`localhost`) && PathPrefix(`/api3/auth/register`)"
+      entryPoints:
+        - web # Listen on the web (HTTP) entry point
+      service: auth-service
+      middlewares:
+        - strip-auth
+        - auth-middleware
+      priority: 100
+
+    auth-service:
+      rule: "Host(`localhost`) && PathPrefix(`/api3`)"
+      entryPoints:
+        - web # Listen on the web (HTTP) entry point
+      service: auth-service
+      middlewares:
+        - strip-auth
 
   middlewares:
     strip-user:
@@ -24,6 +44,19 @@ http:
     strip-device:
       stripPrefix:
         prefixes: ["/api2"]
+    strip-auth:
+      stripPrefix:
+        prefixes: [ "/api3" ]
+
+    auth-middleware:
+      forwardAuth:
+        address: "http://auth-service:8083/auth/validate"
+        trustForwardHeader: true
+        authResponseHeaders:
+          - "X-User-Id"
+          - "X-User-Role"
+        authRequestHeaders:
+          - "Authorization"
 
   services:
     user-service:
@@ -35,3 +68,8 @@ http:
       loadBalancer:
         servers:
           - url: "http://device-service:8081" # Container name solved by Docker DNS
+
+    auth-service:
+      loadBalancer:
+        servers:
+          - url: "http://auth-service:8083" # Container name solved by Docker DNS

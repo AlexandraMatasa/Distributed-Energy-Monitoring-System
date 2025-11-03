@@ -31,6 +31,21 @@ services:
     networks:
       - proxy-network
 
+  auth-db:
+    image: postgres:16
+    container_name: auth-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: auth-db
+    ports:
+      - "5435:5432"
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+    networks:
+      - proxy-network
+
   user-service:
     build:
       context: ./UserManagement
@@ -45,6 +60,7 @@ services:
       DB_USER: postgres
       DB_PASSWORD: admin
       DEVICE_SERVICE_URL: http://device-service:8081
+      AUTH_SERVICE_URL: http://auth-service:8083
     networks:
       - proxy-network
     labels:
@@ -63,6 +79,25 @@ services:
       DB_DBNAME: devices-db
       DB_USER: postgres
       DB_PASSWORD: admin
+    networks:
+      - proxy-network
+    labels:
+      - "traefik.enable=true"
+
+  auth-service:
+    build:
+      context: ./AuthManagement
+      dockerfile: Dockerfile
+    container_name: auth-service
+    depends_on:
+      - auth-db
+    environment:
+      DB_IP: auth-db
+      DB_PORT: 5432
+      DB_DBNAME: auth-db
+      DB_USER: postgres
+      DB_PASSWORD: admin
+      USER_SERVICE_URL: http://user-service:8080
     networks:
       - proxy-network
     labels:
@@ -93,3 +128,4 @@ networks:
 volumes:
   user-db-data:
   device-db-data:
+  auth-db-data:

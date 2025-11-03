@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
@@ -23,8 +24,16 @@ public class AuthenticationController {
     private AuthenticationService authenticationService;
 
     @PostMapping("/register")
-    public ResponseEntity<String> register(@Valid @RequestBody RegisterRequest request) {
+    public ResponseEntity<String> register(
+            @Valid @RequestBody RegisterRequest request,
+            @RequestHeader(value = "X-User-Role", required = false) String role) {
         try {
+            if (!"ADMIN".equalsIgnoreCase(role)) {
+                LOGGER.warn("Non-admin user attempted to register. Role: {}", role);
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body("Only ADMIN can register new users");
+            }
+
             LOGGER.info("Registration request received for username: {}", request.getUsername());
             authenticationService.register(request);
             return ResponseEntity.status(HttpStatus.CREATED)
@@ -35,7 +44,6 @@ public class AuthenticationController {
                     .body(e.getMessage());
         }
     }
-
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody JwtRequest request) {
@@ -50,16 +58,24 @@ public class AuthenticationController {
         }
     }
 
-    @PostMapping("/validate")
-    public ResponseEntity<ValidateTokenResponse> validateToken(@Valid @RequestBody ValidateTokenRequest request) {
-        LOGGER.info("Token validation request received");
-        ValidateTokenResponse response = authenticationService.validateToken(request.getToken());
+    @RequestMapping(value = "/validate", method = {RequestMethod.GET, RequestMethod.POST})
+    public ResponseEntity<?> validateToken(
+            @RequestBody(required = false) ValidateTokenRequest bodyRequest,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
 
-        if (response.isValid()) {
-            return ResponseEntity.ok(response);
-        } else {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+        ValidateTokenResponse validation = authenticationService.validateTokenForForwardAuth(authHeader, bodyRequest);
+
+        if (validation == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-User-Id", validation.getUserId().toString());
+        headers.set("X-User-Role", validation.getRole());
+
+        return ResponseEntity.ok()
+                .headers(headers)
+                .body(validation);
     }
 
     @PostMapping("/sync/user-deleted")

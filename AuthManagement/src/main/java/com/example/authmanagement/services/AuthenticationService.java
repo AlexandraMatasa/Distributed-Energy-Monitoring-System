@@ -109,6 +109,41 @@ public class AuthenticationService {
         }
     }
 
+    public ValidateTokenResponse validateTokenForForwardAuth(String authHeader, ValidateTokenRequest bodyRequest) {
+        String token = extractToken(authHeader, bodyRequest);
+
+        if (token == null) {
+            LOGGER.warn("No token provided in request");
+            return null;
+        }
+
+        ValidateTokenResponse validation = validateToken(token);
+
+        if (!validation.isValid()) {
+            LOGGER.warn("Invalid token provided");
+            return null;
+        }
+
+        LOGGER.info("Token validated successfully for userId: {}, role: {}",
+                validation.getUserId(), validation.getRole());
+
+        return validation;
+    }
+
+    private String extractToken(String authHeader, ValidateTokenRequest bodyRequest) {
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            LOGGER.debug("Token extracted from Authorization header (Traefik ForwardAuth)");
+            return authHeader.substring(7);
+        }
+
+        if (bodyRequest != null && bodyRequest.getToken() != null) {
+            LOGGER.debug("Token extracted from request body (direct call)");
+            return bodyRequest.getToken();
+        }
+
+        return null;
+    }
+
     @Transactional
     public void deleteCredentialsByUserId(UUID userId) {
         LOGGER.info("Deleting credentials for userId: {}", userId);
