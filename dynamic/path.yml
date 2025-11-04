@@ -2,42 +2,71 @@ http:
   # Define URL routing rules, middlewares, and services
   routers:
     user-service:
-      rule: "Host(`localhost`) && PathPrefix(`/api1`)"
+      rule: "PathPrefix(`/api1`)"
       entryPoints:
         - web # Listen on the web (HTTP) entry point
       service: user-service # Forward to the user service
       middlewares:
+        - cors-headers
         - strip-user
         - auth-middleware
 
     device-service:
-      rule: "Host(`localhost`) && PathPrefix(`/api2`)"
+      rule: "PathPrefix(`/api2`)"
       entryPoints:
         - web # Listen on the web (HTTP) entry point
       service: device-service
       middlewares:
+        - cors-headers
         - strip-device
         - auth-middleware
 
     auth-service-register:
-      rule: "Host(`localhost`) && PathPrefix(`/api3/auth/register`)"
+      rule: "PathPrefix(`/api3/auth/register`)"
       entryPoints:
         - web # Listen on the web (HTTP) entry point
       service: auth-service
       middlewares:
+        - cors-headers
         - strip-auth
         - auth-middleware
       priority: 100
 
     auth-service:
-      rule: "Host(`localhost`) && PathPrefix(`/api3`)"
+      rule: "PathPrefix(`/api3`)"
       entryPoints:
         - web # Listen on the web (HTTP) entry point
       service: auth-service
       middlewares:
+        - cors-headers
         - strip-auth
 
+    frontend:
+      rule: "Host(`localhost`)"
+      entryPoints:
+        - web
+      service: frontend
+
   middlewares:
+    cors-headers:
+      headers:
+        accessControlAllowOriginList:
+          - "http://localhost:3000"
+          - "http://localhost"
+        accessControlAllowMethods:
+          - "GET"
+          - "POST"
+          - "PUT"
+          - "DELETE"
+          - "OPTIONS"
+        accessControlAllowHeaders:
+          - "Authorization"
+          - "Content-Type"
+          - "Accept"
+        accessControlAllowCredentials: true
+        accessControlMaxAge: 100
+        addVaryHeader: true
+
     strip-user:
       stripPrefix:
         prefixes: ["/api1"]
@@ -73,3 +102,8 @@ http:
       loadBalancer:
         servers:
           - url: "http://auth-service:8083" # Container name solved by Docker DNS
+
+    frontend:
+      loadBalancer:
+        servers:
+          - url: "http://frontend:80"

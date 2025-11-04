@@ -8,14 +8,16 @@ public class UserDTO {
     private String username;
     private String role;
     private String fullName;
+    private String email;
 
     public UserDTO() {}
 
-    public UserDTO(UUID id, String username, String role, String fullName) {
+    public UserDTO(UUID id, String username, String role, String fullName, String email) {
         this.id = id;
         this.username = username;
         this.role = role;
         this.fullName = fullName;
+        this.email = email;
     }
 
     public UUID getId() {
@@ -49,6 +51,9 @@ public class UserDTO {
     public void setFullName(String fullName) {
         this.fullName = fullName;
     }
+
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
 
     @Override
     public boolean equals(Object o) {

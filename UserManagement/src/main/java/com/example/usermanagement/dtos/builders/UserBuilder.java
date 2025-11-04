@@ -14,7 +14,8 @@ public class UserBuilder {
                 user.getId(),
                 user.getUsername(),
                 user.getRole(),
-                user.getFullName()
+                user.getFullName(),
+                user.getEmail()
         );
     }
 
