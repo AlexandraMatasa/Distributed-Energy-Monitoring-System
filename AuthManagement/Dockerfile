@@ -11,7 +11,7 @@ COPY ./src/ /app/src
 WORKDIR /app
 RUN mvn clean install -DskipTests
 
-FROM openjdk:21-jdk
+FROM eclipse-temurin:21-jdk
 WORKDIR /app
 COPY --from=build /app/target/authmanagement-0.0.1-SNAPSHOT.jar /app/app.jar
 EXPOSE 8083
