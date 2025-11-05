@@ -1,6 +1,16 @@
 http:
   # Define URL routing rules, middlewares, and services
   routers:
+    user-service-docs:
+      rule: "PathPrefix(`/api1/v3/api-docs`) || PathPrefix(`/api1/swagger-ui`)"
+      entryPoints:
+        - web
+      service: user-service
+      middlewares:
+        - cors-headers
+        - strip-user
+      priority: 200
+
     user-service:
       rule: "PathPrefix(`/api1`)"
       entryPoints:
@@ -10,6 +20,17 @@ http:
         - cors-headers
         - strip-user
         - auth-middleware
+      priority: 100
+
+    device-service-docs:
+      rule: "PathPrefix(`/api2/v3/api-docs`) || PathPrefix(`/api2/swagger-ui`)"
+      entryPoints:
+        - web
+      service: device-service
+      middlewares:
+        - cors-headers
+        - strip-device
+      priority: 200
 
     device-service:
       rule: "PathPrefix(`/api2`)"
@@ -20,6 +41,17 @@ http:
         - cors-headers
         - strip-device
         - auth-middleware
+      priority: 100
+
+    auth-service-docs:
+      rule: "PathPrefix(`/api3/v3/api-docs`) || PathPrefix(`/api3/swagger-ui`)"
+      entryPoints:
+        - web
+      service: auth-service
+      middlewares:
+        - cors-headers
+        - strip-auth
+      priority: 300
 
     auth-service-register:
       rule: "PathPrefix(`/api3/auth/register`)"
@@ -30,7 +62,7 @@ http:
         - cors-headers
         - strip-auth
         - auth-middleware
-      priority: 100
+      priority: 300
 
     auth-service:
       rule: "PathPrefix(`/api3`)"
@@ -40,6 +72,7 @@ http:
       middlewares:
         - cors-headers
         - strip-auth
+      priority: 100
 
     frontend:
       rule: "Host(`localhost`)"

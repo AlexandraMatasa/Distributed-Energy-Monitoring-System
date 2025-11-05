@@ -58,12 +58,10 @@ public class AuthenticationController {
         }
     }
 
-    @RequestMapping(value = "/validate", method = {RequestMethod.GET, RequestMethod.POST})
+    @GetMapping("/validate")
     public ResponseEntity<?> validateToken(
-            @RequestBody(required = false) ValidateTokenRequest bodyRequest,
             @RequestHeader(value = "Authorization", required = false) String authHeader) {
-
-        ValidateTokenResponse validation = authenticationService.validateTokenForForwardAuth(authHeader, bodyRequest);
+        ValidateTokenResponse validation = authenticationService.validateTokenForForwardAuth(authHeader);
 
         if (validation == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();

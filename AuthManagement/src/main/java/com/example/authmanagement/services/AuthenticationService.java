@@ -109,8 +109,8 @@ public class AuthenticationService {
         }
     }
 
-    public ValidateTokenResponse validateTokenForForwardAuth(String authHeader, ValidateTokenRequest bodyRequest) {
-        String token = extractToken(authHeader, bodyRequest);
+    public ValidateTokenResponse validateTokenForForwardAuth(String authHeader) {
+        String token = extractToken(authHeader);
 
         if (token == null) {
             LOGGER.warn("No token provided in request");
@@ -130,17 +130,11 @@ public class AuthenticationService {
         return validation;
     }
 
-    private String extractToken(String authHeader, ValidateTokenRequest bodyRequest) {
+    private String extractToken(String authHeader) {
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             LOGGER.debug("Token extracted from Authorization header (Traefik ForwardAuth)");
             return authHeader.substring(7);
         }
-
-        if (bodyRequest != null && bodyRequest.getToken() != null) {
-            LOGGER.debug("Token extracted from request body (direct call)");
-            return bodyRequest.getToken();
-        }
-
         return null;
     }
 

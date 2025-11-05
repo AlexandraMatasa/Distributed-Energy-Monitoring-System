@@ -1,7 +1,9 @@
 package com.example.authmanagement.config;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 
 import com.example.authmanagement.entities.Credential;
@@ -37,11 +39,32 @@ public class JwtRequestFilter extends OncePerRequestFilter {
     @Autowired
     private CredentialRepository credentialRepository;
 
+    private static final List<String> PUBLIC_PATHS = Arrays.asList(
+            "/auth/login",
+            "/auth/register",
+            "/auth/validate",
+            "/auth/sync",
+            "/swagger-ui",
+            "/v3/api-docs",
+            "/api-docs",
+            "/swagger-resources",
+            "/webjars",
+            "/api1/v3/api-docs",
+            "/api2/v3/api-docs"
+    );
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
 
+        final String requestPath = request.getRequestURI();
         final String requestTokenHeader = request.getHeader("Authorization");
+
+        if (isPublicPath(requestPath)) {
+            chain.doFilter(request, response);
+            return;
+        }
+
 
         UUID userId = null;
         String jwtToken = null;
@@ -55,7 +78,7 @@ public class JwtRequestFilter extends OncePerRequestFilter {
             } catch (Exception e) {
                 logger.warn("Unable to get JWT Token or extract userId: " + e.getMessage());
             }
-        } else {
+        } else if (!requestPath.contains("swagger") && !requestPath.contains("api-docs")){
             logger.warn("JWT Token does not begin with Bearer String");
         }
 
@@ -84,5 +107,15 @@ public class JwtRequestFilter extends OncePerRequestFilter {
         }
 
         chain.doFilter(request, response);
+    }
+
+    private boolean isPublicPath(String requestPath) {
+        if (requestPath.contains("swagger") || requestPath.contains("api-docs") ||
+                requestPath.contains("swagger-ui") || requestPath.contains("swagger-resources") ||
+                requestPath.contains("webjars")) {
+            return true;
+        }
+
+        return PUBLIC_PATHS.stream().anyMatch(requestPath::contains);
     }
 }
