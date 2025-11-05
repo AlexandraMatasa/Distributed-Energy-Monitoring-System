@@ -7,8 +7,11 @@ import jakarta.validation.constraints.Positive;
 import java.util.Objects;
 import java.util.UUID;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 public class DeviceDetailsDTO {
 
+    @Schema(accessMode = Schema.AccessMode.READ_ONLY)
     private UUID id;
 
     @NotBlank(message = "name is required")

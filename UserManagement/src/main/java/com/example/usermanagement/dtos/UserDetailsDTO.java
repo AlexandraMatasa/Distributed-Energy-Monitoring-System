@@ -7,8 +7,11 @@ import jakarta.validation.constraints.Size;
 import java.util.Objects;
 import java.util.UUID;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 public class UserDetailsDTO {
 
+    @Schema(accessMode = Schema.AccessMode.READ_ONLY)
     private UUID id;
 
     @NotBlank(message = "username is required")
