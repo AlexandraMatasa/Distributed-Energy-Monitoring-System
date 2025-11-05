@@ -46,3 +46,16 @@ The backend consists of the API Gateway, three distinct microservices, and their
 * API Gateway: Traefik 3.0
 * API Documentation: SpringDoc (OpenAPI)
 
+## Accessing the Application
+
+* **Frontend Application**:
+    * `http://localhost` <br><br>
+
+* **Traefik Dashboard** (for monitoring routes):
+    * `http://localhost:8082`<br><br>
+
+* **API Documentation (Swagger UI)**:
+    * **Auth Service**: `http://localhost/api3/swagger-ui/index.html`
+    * **User Service**: `http://localhost/api1/swagger-ui/index.html`
+    * **Device Service**: `http://localhost/api2/swagger-ui/index.html`
+
