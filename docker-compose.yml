@@ -46,21 +46,65 @@ services:
     networks:
       - proxy-network
 
+  monitoring-db:
+    image: postgres:16
+    container_name: monitoring-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: admin
+      POSTGRES_DB: monitoring-db
+    ports:
+      - "5436:5432"
+    volumes:
+      - monitoring-db-data:/var/lib/postgresql/data
+    networks:
+      - proxy-network
+
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: kalo
+      RABBITMQ_DEFAULT_PASS: kalo
+    volumes:
+      - rabbitmq-lib:/var/lib/rabbitmq/
+      - rabbitmq-log:/var/log/rabbitmq
+    networks:
+      - proxy-network
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+
+
   user-service:
     build:
       context: ./UserManagement
       dockerfile: Dockerfile
     container_name: user-service
     depends_on:
-      - user-db
+      user-db:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     environment:
       DB_IP: user-db
       DB_PORT: 5432
       DB_DBNAME: users-db
       DB_USER: postgres
       DB_PASSWORD: admin
-      DEVICE_SERVICE_URL: http://device-service:8081
-      AUTH_SERVICE_URL: http://auth-service:8083
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: kalo
+      RABBITMQ_PASSWORD: kalo
     networks:
       - proxy-network
     labels:
@@ -72,13 +116,20 @@ services:
       dockerfile: Dockerfile
     container_name: device-service
     depends_on:
-      - device-db
+      device-db:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     environment:
       DB_IP: device-db
       DB_PORT: 5432
       DB_DBNAME: devices-db
       DB_USER: postgres
       DB_PASSWORD: admin
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: kalo
+      RABBITMQ_PASSWORD: kalo
     networks:
       - proxy-network
     labels:
@@ -90,14 +141,45 @@ services:
       dockerfile: Dockerfile
     container_name: auth-service
     depends_on:
-      - auth-db
+      auth-db:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
     environment:
       DB_IP: auth-db
       DB_PORT: 5432
       DB_DBNAME: auth-db
       DB_USER: postgres
       DB_PASSWORD: admin
-      USER_SERVICE_URL: http://user-service:8080
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: kalo
+      RABBITMQ_PASSWORD: kalo
+    networks:
+      - proxy-network
+    labels:
+      - "traefik.enable=true"
+
+  monitoring-service:
+    build:
+      context: ./MonitoringService
+      dockerfile: Dockerfile
+    container_name: monitoring-service
+    depends_on:
+      monitoring-db:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      DB_IP: monitoring-db
+      DB_PORT: 5432
+      DB_DBNAME: monitoring-db
+      DB_USER: postgres
+      DB_PASSWORD: admin
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: kalo
+      RABBITMQ_PASSWORD: kalo
     networks:
       - proxy-network
     labels:
@@ -143,3 +225,6 @@ volumes:
   user-db-data:
   device-db-data:
   auth-db-data:
+  monitoring-db-data:
+  rabbitmq-lib:
+  rabbitmq-log:

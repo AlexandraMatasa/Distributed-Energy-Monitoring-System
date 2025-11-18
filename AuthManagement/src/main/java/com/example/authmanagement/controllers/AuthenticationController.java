@@ -76,18 +76,6 @@ public class AuthenticationController {
                 .body(validation);
     }
 
-    @PostMapping("/sync/user-deleted")
-    public ResponseEntity<Void> syncUserDeleted(@RequestBody java.util.UUID userId) {
-        try {
-            LOGGER.info("Sync request received for user deletion: {}", userId);
-            authenticationService.deleteCredentialsByUserId(userId);
-            return ResponseEntity.noContent().build();
-        } catch (Exception e) {
-            LOGGER.error("Failed to sync user deletion: {}", e.getMessage());
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
-        }
-    }
-
     private static class ErrorResponse {
         private String message;
 

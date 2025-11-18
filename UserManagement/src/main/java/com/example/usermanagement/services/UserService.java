@@ -1,5 +1,7 @@
 package com.example.usermanagement.services;
 
+import com.example.usermanagement.config.RabbitMQConfig;
+import com.example.usermanagement.dtos.SyncMessageDTO;
 import com.example.usermanagement.dtos.UserDTO;
 import com.example.usermanagement.dtos.UserDetailsDTO;
 import com.example.usermanagement.dtos.builders.UserBuilder;
@@ -9,10 +11,11 @@ import com.example.usermanagement.handlers.exceptions.model.ResourceNotFoundExce
 import com.example.usermanagement.repositories.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -24,18 +27,111 @@ public class UserService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(UserService.class);
     private final UserRepository userRepository;
-    private final RestTemplate restTemplate;
-
-    @Value("${device.service.url:http://localhost:8081}")
-    private String deviceServiceUrl;
-
-    @Value("${auth.service.url:http://localhost:8083}")
-    private String authServiceUrl;
+    private final RabbitTemplate rabbitTemplate;
 
     @Autowired
-    public UserService(UserRepository userRepository, RestTemplate restTemplate) {
+    public UserService(UserRepository userRepository, RabbitTemplate rabbitTemplate) {
         this.userRepository = userRepository;
-        this.restTemplate = restTemplate;
+        this.rabbitTemplate = rabbitTemplate;
+    }
+
+    @RabbitListener(queues = RabbitMQConfig.USER_SYNC_QUEUE)
+    @Transactional
+    public void handleSyncMessage(SyncMessageDTO message) {
+        LOGGER.info("User received sync message: {}", message.getEventType());
+
+        try {
+            switch (message.getEventType()) {
+                case "USER_CREATED":
+                    handleUserCreated(message);
+                    break;
+                case "USER_DELETED":
+                    LOGGER.debug("Ignoring USER_DELETED echo");
+                    break;
+                case "DEVICE_CREATED":
+                case "DEVICE_DELETED":
+                    LOGGER.debug("Ignoring device event: {}", message.getEventType());
+                    break;
+                default:
+                    LOGGER.debug("Ignoring event: {}", message.getEventType());
+            }
+        } catch (Exception e) {
+            LOGGER.error("Failed to process sync message: {}", e.getMessage(), e);
+        }
+    }
+
+    private void handleUserCreated(SyncMessageDTO message) {
+        LOGGER.info("Received USER_CREATED: credentialsId={}, username={}",
+                message.getCredentialsId(), message.getUsername());
+
+        try {
+            if (userRepository.existsByUsername(message.getUsername())) {
+                LOGGER.error("Username {} already exists", message.getUsername());
+                publishUserCreateFailed(message.getCredentialsId(),
+                        "Username already exists: " + message.getUsername());
+                return;
+            }
+
+            User user = new User();
+            user.setUsername(message.getUsername());
+            user.setPassword(message.getPassword());
+            user.setEmail(message.getEmail());
+            user.setFullName(message.getFullName());
+            user.setRole(message.getRole());
+
+            user = userRepository.save(user);
+            LOGGER.info("User created: userId={}, username={}", user.getId(), user.getUsername());
+
+            publishUserIdAssigned(message.getCredentialsId(), user.getId(), user.getUsername());
+
+        } catch (Exception e) {
+            LOGGER.error("Failed to create user: {}", e.getMessage(), e);
+            publishUserCreateFailed(message.getCredentialsId(), e.getMessage());
+        }
+    }
+
+    private void publishUserIdAssigned(UUID credentialsId, UUID userId, String username) {
+        try {
+            SyncMessageDTO response = new SyncMessageDTO();
+            response.setEventType("USER_ID_ASSIGNED");
+            response.setCredentialsId(credentialsId);
+            response.setUserId(userId);
+            response.setUsername(username);
+
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.SYNC_EXCHANGE,
+                    "",
+                    response
+            );
+
+            LOGGER.info("Published USER_ID_ASSIGNED: credentialsId={}, userId={}",
+                    credentialsId, userId);
+        } catch (Exception e) {
+            LOGGER.error("Failed to publish USER_ID_ASSIGNED: {}", e.getMessage());
+            userRepository.deleteById(userId);
+            publishUserCreateFailed(credentialsId, "Failed to publish USER_ID_ASSIGNED");
+        }
+    }
+
+    private void publishUserCreateFailed(UUID credentialsId, String errorMessage) {
+        try {
+            SyncMessageDTO response = new SyncMessageDTO();
+            response.setEventType("USER_CREATE_FAILED");
+            response.setCredentialsId(credentialsId);
+            response.setUserId(null);
+            response.setErrorMessage(errorMessage);
+
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.SYNC_EXCHANGE,
+                    "",
+                    response
+            );
+
+            LOGGER.error("Published USER_CREATE_FAILED: credentialsId={}, error={}",
+                    credentialsId, errorMessage);
+        } catch (Exception e) {
+            LOGGER.error("Failed to publish USER_CREATE_FAILED: {}", e.getMessage());
+        }
     }
 
     public List<UserDTO> findUsers() {
@@ -52,22 +148,6 @@ public class UserService {
             throw new ResourceNotFoundException(User.class.getSimpleName() + " with id: " + id);
         }
         return UserBuilder.toUserDetailsDTO(userOptional.get());
-    }
-
-    public UUID insert(UserDetailsDTO userDTO) {
-        if (userRepository.existsByUsername(userDTO.getUsername())) {
-            LOGGER.error("User with username {} already exists", userDTO.getUsername());
-            throw new DuplicateResourceException("User with username: " + userDTO.getUsername());
-        }
-
-        User user = UserBuilder.toEntity(userDTO);
-        user = userRepository.save(user);
-        UUID userId = user.getId();
-        LOGGER.debug("User with id {} was inserted in db", user.getId());
-
-        notifyDeviceServiceUserCreated(userId);
-
-        return user.getId();
     }
 
     public UUID update(UUID id, UserDetailsDTO userDTO) {
@@ -105,46 +185,24 @@ public class UserService {
         userRepository.deleteById(id);
         LOGGER.debug("User with id {} was deleted from db", id);
 
-        notifyAuthServiceUserDeleted(id);
-        notifyDeviceServiceUserDeleted(id);
+        publishUserDeleted(id);
     }
 
-    private void notifyDeviceServiceUserCreated(UUID userId) {
+    private void publishUserDeleted(UUID userId) {
         try {
-            String url = deviceServiceUrl + "/device/sync/user-created";
-            LOGGER.info("Notifying Device Service about user {} creation", userId);
+            SyncMessageDTO message = new SyncMessageDTO();
+            message.setEventType("USER_DELETED");
+            message.setUserId(userId);
 
-            restTemplate.postForEntity(url, userId, Void.class);
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.SYNC_EXCHANGE,
+                    "",
+                    message
+            );
 
-            LOGGER.info("Device Service notified successfully");
+            LOGGER.info("Published USER_DELETED for userId: {}", userId);
         } catch (Exception e) {
-            LOGGER.warn("Failed to notify Device Service: {}", e.getMessage());
-        }
-    }
-
-    private void notifyDeviceServiceUserDeleted(UUID userId) {
-        try {
-            String url = deviceServiceUrl + "/device/sync/user-deleted";
-            LOGGER.info("Notifying Device Service about user {} deletion", userId);
-
-            restTemplate.postForEntity(url, userId, Void.class);
-
-            LOGGER.info("Device Service notified successfully");
-        } catch (Exception e) {
-            LOGGER.warn("Failed to notify Device Service: {}", e.getMessage());
-        }
-    }
-
-    private void notifyAuthServiceUserDeleted(UUID userId) {
-        try {
-            String url = authServiceUrl + "/auth/sync/user-deleted";
-            LOGGER.info("Notifying Auth Service about user {} deletion", userId);
-
-            restTemplate.postForEntity(url, userId, Void.class);
-
-            LOGGER.info("Auth Service notified successfully");
-        } catch (Exception e) {
-            LOGGER.warn("Failed to notify Auth Service: {}", e.getMessage());
+            LOGGER.error("Failed to publish USER_DELETED: {}", e.getMessage());
         }
     }
 }

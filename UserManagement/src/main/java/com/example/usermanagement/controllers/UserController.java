@@ -34,17 +34,6 @@ public class UserController {
         return ResponseEntity.ok(userService.findUsers());
     }
 
-    @PostMapping
-    public ResponseEntity<Void> create(@Valid @RequestBody UserDetailsDTO user, @RequestHeader(value = "X-User-Role", required = false) String role) {
-        UUID id = userService.insert(user);
-        URI location = ServletUriComponentsBuilder
-                .fromCurrentRequest()
-                .path("/{id}")
-                .buildAndExpand(id)
-                .toUri();
-        return ResponseEntity.created(location).build();
-    }
-
     @GetMapping("/{id}")
     public ResponseEntity<UserDetailsDTO> getUser(
             @PathVariable UUID id,

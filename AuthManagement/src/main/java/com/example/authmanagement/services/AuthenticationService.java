@@ -1,17 +1,15 @@
 package com.example.authmanagement.services;
 
 import com.example.authmanagement.config.JwtTokenUtil;
+import com.example.authmanagement.config.RabbitMQConfig;
 import com.example.authmanagement.dtos.*;
 import com.example.authmanagement.entities.Credential;
 import com.example.authmanagement.repositories.CredentialRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.amqp.rabbit.annotation.RabbitListener;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.DisabledException;
@@ -19,8 +17,8 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
 
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -28,23 +26,24 @@ public class AuthenticationService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AuthenticationService.class);
 
-    @Autowired
-    private CredentialRepository credentialRepository;
+    private final CredentialRepository credentialRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtTokenUtil jwtTokenUtil;
+    private final AuthenticationManager authenticationManager;
+    private final RabbitTemplate rabbitTemplate;
 
     @Autowired
-    private JwtTokenUtil jwtTokenUtil;
-
-    @Autowired
-    private AuthenticationManager authenticationManager;
-
-    @Autowired
-    private PasswordEncoder passwordEncoder;
-
-    @Autowired
-    private RestTemplate restTemplate;
-
-    @Value("${user.service.url:http://localhost:8080}")
-    private String userServiceUrl;
+    public AuthenticationService(CredentialRepository credentialRepository,
+                                 PasswordEncoder passwordEncoder,
+                                 JwtTokenUtil jwtTokenUtil,
+                                 AuthenticationManager authenticationManager,
+                                 RabbitTemplate rabbitTemplate) {
+        this.credentialRepository = credentialRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.jwtTokenUtil = jwtTokenUtil;
+        this.authenticationManager = authenticationManager;
+        this.rabbitTemplate = rabbitTemplate;
+    }
 
     @Transactional
     public void register(RegisterRequest request) throws Exception {
@@ -55,25 +54,121 @@ public class AuthenticationService {
             throw new Exception("Username already exists");
         }
 
-        UUID userId = createUserInUserService(request);
-        LOGGER.info("User created in User Management service with ID: {}", userId);
+        Credential credential = new Credential();
+        credential.setUsername(request.getUsername());
+        credential.setPassword(passwordEncoder.encode(request.getPassword()));
+        credential.setRole(request.getRole());
+        credential.setUserId(null);
+
+        credential = credentialRepository.save(credential);
+        LOGGER.info("Credentials created with id: {}", credential.getId());
+
+        publishUserCreated(credential.getId(), request);
+    }
+
+    private void publishUserCreated(UUID credentialsId, RegisterRequest request) {
+        try {
+            SyncMessageDTO message = new SyncMessageDTO();
+            message.setEventType("USER_CREATED");
+            message.setCredentialsId(credentialsId);
+            message.setUsername(request.getUsername());
+            message.setPassword(request.getPassword());
+            message.setEmail(request.getEmail());
+            message.setFullName(request.getFullName());
+            message.setRole(request.getRole());
+
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.SYNC_EXCHANGE,
+                    "",
+                    message
+            );
+
+            LOGGER.info("Published USER_CREATED for credentialsId: {}", credentialsId);
+        } catch (Exception e) {
+            LOGGER.error("Failed to publish USER_CREATED: {}", e.getMessage());
+            credentialRepository.deleteById(credentialsId);
+            throw new RuntimeException("Failed to publish user creation event", e);
+        }
+    }
+
+    @RabbitListener(queues = RabbitMQConfig.AUTH_SYNC_QUEUE)
+    @Transactional
+    public void handleSyncMessage(SyncMessageDTO message) {
+        LOGGER.info("Auth received sync message: {}", message.getEventType());
 
         try {
-            Credential credential = new Credential();
-            credential.setUserId(userId);
-            credential.setUsername(request.getUsername());
-            credential.setPassword(passwordEncoder.encode(request.getPassword()));
-            credential.setRole(request.getRole());
+            switch (message.getEventType()) {
+                case "USER_ID_ASSIGNED":
+                    handleUserIdAssigned(message);
+                    break;
+                case "USER_CREATE_FAILED":
+                    handleUserCreateFailed(message);
+                    break;
+                case "USER_DELETED":
+                    handleUserDeleted(message);
+                    break;
+                case "USER_CREATED":
+                    LOGGER.debug("Ignoring USER_CREATED echo");
+                    break;
+                default:
+                    LOGGER.debug("Ignoring event: {}", message.getEventType());
+            }
+        } catch (Exception e) {
+            LOGGER.error("Failed to process sync message: {}", e.getMessage(), e);
+        }
+    }
 
-            credentialRepository.save(credential);
-            LOGGER.info("Credentials saved for user: {}", request.getUsername());
+    private void handleUserIdAssigned(SyncMessageDTO message) {
+        LOGGER.info("Received USER_ID_ASSIGNED: credentialsId={}, userId={}",
+                message.getCredentialsId(), message.getUserId());
 
-            LOGGER.info("Registration completed successfully for user: {}", request.getUsername());
+        try {
+            Optional<Credential> credentialOptional = credentialRepository
+                    .findById(message.getCredentialsId());
+
+            if (credentialOptional.isPresent()) {
+                Credential credential = credentialOptional.get();
+                credential.setUserId(message.getUserId());
+                credentialRepository.save(credential);
+
+                LOGGER.info("Updated credentials {} with userId: {}",
+                        message.getCredentialsId(), message.getUserId());
+            } else {
+                LOGGER.error("Credentials {} not found", message.getCredentialsId());
+            }
 
         } catch (Exception e) {
-            LOGGER.error("Failed to save credentials, rolling back user creation", e);
-            deleteUserFromUserService(userId);
-            throw new Exception("Registration failed: " + e.getMessage());
+            LOGGER.error("Failed to update credentials: {}", e.getMessage());
+        }
+    }
+
+    private void handleUserCreateFailed(SyncMessageDTO message) {
+        LOGGER.error("Received USER_CREATE_FAILED: credentialsId={}, error={}",
+                message.getCredentialsId(), message.getErrorMessage());
+
+        try {
+            if (message.getCredentialsId() != null) {
+                credentialRepository.deleteById(message.getCredentialsId());
+                LOGGER.info("Rolled back credentials: {}", message.getCredentialsId());
+            }
+        } catch (Exception e) {
+            LOGGER.error("Failed to rollback credentials: {}", e.getMessage());
+        }
+    }
+
+    private void handleUserDeleted(SyncMessageDTO message) {
+        LOGGER.info("Received USER_DELETED: userId={}", message.getUserId());
+
+        try {
+            Optional<Credential> credentialOptional = credentialRepository
+                    .findByUserId(message.getUserId());
+
+            if (credentialOptional.isPresent()) {
+                credentialRepository.delete(credentialOptional.get());
+                LOGGER.info("Deleted credentials for userId: {}", message.getUserId());
+            }
+        } catch (Exception e) {
+            LOGGER.error("Failed to delete credentials: {}", e.getMessage());
         }
     }
 
@@ -84,6 +179,11 @@ public class AuthenticationService {
 
         Credential credential = credentialRepository.findByUsername(request.getUsername())
                 .orElseThrow(() -> new Exception("User not found"));
+
+        if (credential.getUserId() == null) {
+            LOGGER.error("User {} not fully registered yet", request.getUsername());
+            throw new Exception("User registration not completed. Please try again later.");
+        }
 
         String token = jwtTokenUtil.generateToken(credential.getUserId(), credential.getRole());
         LOGGER.info("Login successful for user: {}", request.getUsername());
@@ -138,12 +238,6 @@ public class AuthenticationService {
         return null;
     }
 
-    @Transactional
-    public void deleteCredentialsByUserId(UUID userId) {
-        LOGGER.info("Deleting credentials for userId: {}", userId);
-        credentialRepository.deleteByUserId(userId);
-    }
-
     private void authenticate(String username, String password) throws Exception {
         try {
             authenticationManager.authenticate(
@@ -155,44 +249,6 @@ public class AuthenticationService {
         } catch (BadCredentialsException e) {
             LOGGER.error("Invalid credentials for user: {}", username);
             throw new Exception("INVALID_CREDENTIALS", e);
-        }
-    }
-
-    private UUID createUserInUserService(RegisterRequest request) throws Exception {
-        try {
-            String url = userServiceUrl + "/user";
-
-            UserServiceDTO userDTO = new UserServiceDTO();
-            userDTO.setUsername(request.getUsername());
-            userDTO.setPassword(request.getPassword());
-            userDTO.setRole(request.getRole());
-            userDTO.setEmail(request.getEmail());
-            userDTO.setFullName(request.getFullName());
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            HttpEntity<UserServiceDTO> entity = new HttpEntity<>(userDTO, headers);
-
-            ResponseEntity<Void> response = restTemplate.postForEntity(url, entity, Void.class);
-
-            String location = response.getHeaders().getLocation().toString();
-            String userIdStr = location.substring(location.lastIndexOf('/') + 1);
-
-            return UUID.fromString(userIdStr);
-
-        } catch (Exception e) {
-            LOGGER.error("Failed to create user in User Management service: {}", e.getMessage());
-            throw new Exception("Failed to create user in User Management service: " + e.getMessage());
-        }
-    }
-
-    private void deleteUserFromUserService(UUID userId) {
-        try {
-            String url = userServiceUrl + "/user/" + userId;
-            restTemplate.delete(url);
-            LOGGER.info("User deleted from User Management service: {}", userId);
-        } catch (Exception e) {
-            LOGGER.error("Failed to delete user from User Management service: {}", e.getMessage());
         }
     }
 }

@@ -20,7 +20,7 @@ public class Credential implements Serializable {
     @JdbcTypeCode(SqlTypes.UUID)
     private UUID id;
 
-    @Column(name = "user_id", nullable = false, unique = true)
+    @Column(name = "user_id", unique = true)
     @JdbcTypeCode(SqlTypes.UUID)
     private UUID userId;
 
