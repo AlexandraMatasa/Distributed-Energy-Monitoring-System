@@ -6,23 +6,48 @@ import Login from './navigation/Login';
 import UserContainer from './user/UserContainer';
 import DeviceContainer from './device/DeviceContainer';
 import AssignmentsContainer from './assignments/AssignmentsContainer';
-// import './App.css';
+import AccessDenied from './navigation/AccessDenied';
+import ProtectedRoute from './navigation/ProtectedRoute';
 
 function App() {
-  return (
-      <Router>
-        <div className="App">
-          <NavigationBar />
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/users" element={<UserContainer />} />
-            <Route path="/devices" element={<DeviceContainer />} />
-            <Route path="/assignments" element={<AssignmentsContainer />} />
-          </Routes>
-        </div>
-      </Router>
-  );
+    return (
+        <Router>
+            <div className="App">
+                <NavigationBar />
+                <Routes>
+                    <Route path="/" element={<Home />} />
+                    <Route path="/login" element={<Login />} />
+                    <Route path="/access-denied" element={<AccessDenied />} />
+
+                    <Route
+                        path="/users"
+                        element={
+                            <ProtectedRoute allowedRoles={['ADMIN']}>
+                                <UserContainer />
+                            </ProtectedRoute>
+                        }
+                    />
+                    <Route
+                        path="/assignments"
+                        element={
+                            <ProtectedRoute allowedRoles={['ADMIN']}>
+                                <AssignmentsContainer />
+                            </ProtectedRoute>
+                        }
+                    />
+
+                    <Route
+                        path="/devices"
+                        element={
+                            <ProtectedRoute allowedRoles={['ADMIN', 'CLIENT']}>
+                                <DeviceContainer />
+                            </ProtectedRoute>
+                        }
+                    />
+                </Routes>
+            </div>
+        </Router>
+    );
 }
 
 export default App;
