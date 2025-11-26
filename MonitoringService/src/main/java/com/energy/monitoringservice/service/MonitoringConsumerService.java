@@ -58,6 +58,18 @@ public class MonitoringConsumerService {
             return;
         }
 
+        boolean exists = measurementRepository.existsByDeviceIdAndTimestamp(
+                sensorData.getDeviceId(),
+                sensorData.getTimestamp()
+        );
+
+        if (exists) {
+            log.warn("REJECTED duplicate: deviceId={}, timestamp={}",
+                    sensorData.getDeviceId(),
+                    sensorData.getTimestamp());
+            return;
+        }
+
         SensorMeasurement savedMeasurement = processValidSensorData(sensorData);
 
         try {

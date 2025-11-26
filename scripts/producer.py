@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """
 Sensor Data Generator
-Usage: python producer.py <device_id>
+Usage: python producer.py
+
+Generates data starting from a FIXED date: 2025-11-19 00:00:00
 """
 
 import pika
@@ -21,7 +23,34 @@ ROUTING_KEY = 'sensor.data'
 
 MEASUREMENT_INTERVAL_MINUTES = 10
 SLEEP_SECONDS = 2
-START_DAYS_AGO = 7
+
+FIXED_START_DATE = datetime(2025, 11, 19, 0, 0, 0)
+
+CONFIG_FILE = 'device_config.json'
+
+
+def load_device_id():
+    try:
+        with open(CONFIG_FILE, 'r') as f:
+            config = json.load(f)
+            device_id = config.get('deviceId')
+
+            if not device_id or device_id == 'your-device-id-here':
+                print(f"ERROR: Please set a valid device ID in {CONFIG_FILE}")
+                sys.exit(1)
+
+            return device_id
+
+    except FileNotFoundError:
+        print(f"ERROR: Config file '{CONFIG_FILE}' not found!")
+        print(f"Create {CONFIG_FILE} with:")
+        print('   {"deviceId": "your-device-uuid-here"}')
+        sys.exit(1)
+
+    except json.JSONDecodeError as e:
+        print(f"ERROR: Invalid JSON in {CONFIG_FILE}: {e}")
+        sys.exit(1)
+
 
 def generate_measurement(base_load, hour):
     if 0 <= hour < 6:
@@ -36,27 +65,25 @@ def generate_measurement(base_load, hour):
         time_multiplier = 0.6 + (0.3 * random.random())
 
     random_variation = 0.9 + (0.2 * random.random())
-
     measurement = base_load * time_multiplier * random_variation * (MEASUREMENT_INTERVAL_MINUTES / 60.0)
 
     return round(measurement, 3)
 
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python producer.py <device_id>")
-        sys.exit(1)
+    device_id = load_device_id()
 
-    device_id = sys.argv[1]
+    random.seed(hash(device_id) % (2**32))
     base_load = 0.5 + (1.5 * random.random())
-    current_timestamp = datetime.now() - timedelta(days=START_DAYS_AGO)
+
+    current_timestamp = FIXED_START_DATE
 
     print("=" * 80)
     print("Device Data Producer - Energy Management System")
     print("=" * 80)
     print(f"Device ID:           {device_id}")
     print(f"Base Load:           {base_load:.3f} kWh/hour")
-    print(f"Starting from:       {current_timestamp.strftime('%Y-%m-%d %H:%M:%S')} ({START_DAYS_AGO} days ago)")
+    print(f"Starting from:       {current_timestamp.strftime('%Y-%m-%d %H:%M:%S')} (FIXED START DATE)")
     print(f"Time increment:      {MEASUREMENT_INTERVAL_MINUTES} minutes per message")
     print(f"Send interval:       {SLEEP_SECONDS} seconds (real time)")
     print(f"Exchange:            {SENSOR_EXCHANGE}")
@@ -92,8 +119,14 @@ def main():
         print()
 
         count = 0
+        now = datetime.now()
 
         while True:
+            if current_timestamp > now:
+                print(f"\nReached current time. Stopping.")
+                print(f"Last timestamp sent: {(current_timestamp - timedelta(minutes=MEASUREMENT_INTERVAL_MINUTES)).strftime('%Y-%m-%d %H:%M:%S')}")
+                break
+
             measurement = generate_measurement(base_load, current_timestamp.hour)
 
             message = {
@@ -124,7 +157,9 @@ def main():
     except KeyboardInterrupt:
         print("\n\n" + "=" * 80)
         print(f"Producer stopped. Total measurements sent: {count}")
-        print(f"Final timestamp: {current_timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+        if count > 0:
+            final_timestamp = current_timestamp - timedelta(minutes=MEASUREMENT_INTERVAL_MINUTES)
+            print(f"Final timestamp: {final_timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
         print("=" * 80)
     except Exception as e:
         print(f"\nError: {e}")

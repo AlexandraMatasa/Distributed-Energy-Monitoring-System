@@ -27,4 +27,6 @@ public interface SensorMeasurementRepository extends JpaRepository<SensorMeasure
     int deleteByDeviceId(@Param("deviceId") UUID deviceId);
 
     long countByDeviceId(UUID deviceId);
+
+    boolean existsByDeviceIdAndTimestamp(UUID deviceId, LocalDateTime timestamp);
 }
