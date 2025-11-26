@@ -1,9 +1,33 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Container, Button } from 'reactstrap';
 
 function Home() {
-    const token = localStorage.getItem('token');
-    const role = localStorage.getItem('role');
+    const [authState, setAuthState] = useState({
+        token: localStorage.getItem('token'),
+        role: localStorage.getItem('role')
+    });
+
+    const location = useLocation();
+
+    useEffect(() => {
+        const updateAuthState = () => {
+            setAuthState({
+                token: localStorage.getItem('token'),
+                role: localStorage.getItem('role')
+            });
+        };
+
+        updateAuthState();
+
+        window.addEventListener('storage', updateAuthState);
+
+        return () => {
+            window.removeEventListener('storage', updateAuthState);
+        };
+    }, [location]);
+
+    const { token, role } = authState;
 
     return (
         <div className="home-wrapper">

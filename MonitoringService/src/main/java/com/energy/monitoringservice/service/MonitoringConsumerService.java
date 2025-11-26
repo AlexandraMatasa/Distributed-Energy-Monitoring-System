@@ -5,8 +5,11 @@ import com.energy.monitoringservice.dto.SensorDataDTO;
 import com.energy.monitoringservice.dto.SyncMessageDTO;
 import com.energy.monitoringservice.entity.DeviceCache;
 import com.energy.monitoringservice.entity.HourlyEnergyConsumption;
+import com.energy.monitoringservice.entity.SensorMeasurement;
 import com.energy.monitoringservice.repository.DeviceCacheRepository;
 import com.energy.monitoringservice.repository.HourlyConsumptionRepository;
+import com.energy.monitoringservice.repository.SensorMeasurementRepository;
+import com.energy.monitoringservice.websocket.MonitoringWebSocketHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -16,6 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -24,13 +29,19 @@ public class MonitoringConsumerService {
     private static final Logger log = LoggerFactory.getLogger(MonitoringConsumerService.class);
 
     private final HourlyConsumptionRepository consumptionRepository;
+    private final SensorMeasurementRepository measurementRepository;
     private final DeviceCacheRepository deviceCacheRepository;
+    private final MonitoringWebSocketHandler webSocketHandler;
 
     @Autowired
     public MonitoringConsumerService(HourlyConsumptionRepository consumptionRepository,
-                                     DeviceCacheRepository deviceCacheRepository) {
+                                     SensorMeasurementRepository measurementRepository,
+                                     DeviceCacheRepository deviceCacheRepository,
+                                     MonitoringWebSocketHandler webSocketHandler) {
         this.consumptionRepository = consumptionRepository;
+        this.measurementRepository = measurementRepository;
         this.deviceCacheRepository = deviceCacheRepository;
+        this.webSocketHandler = webSocketHandler;
     }
 
     @RabbitListener(queues = RabbitMQConfig.SENSOR_DATA_QUEUE)
@@ -47,10 +58,42 @@ public class MonitoringConsumerService {
             return;
         }
 
-        processValidSensorData(sensorData);
+        SensorMeasurement savedMeasurement = processValidSensorData(sensorData);
+
+        try {
+            Map<String, Object> wsData = new HashMap<>();
+            wsData.put("id", savedMeasurement.getId().toString());
+            wsData.put("timestamp", savedMeasurement.getTimestamp().toString());
+            wsData.put("measurementValue", savedMeasurement.getMeasurementValue());
+
+            log.info("Broadcasting WebSocket message to device: {}", sensorData.getDeviceId());
+            webSocketHandler.broadcastNewMeasurement(sensorData.getDeviceId(), wsData);
+            log.info("WebSocket broadcast completed");
+        } catch (Exception e) {
+            log.error("Failed to broadcast WebSocket message: {}", e.getMessage(), e);
+        }
     }
 
-    private void processValidSensorData(SensorDataDTO sensorData) {
+    private SensorMeasurement  processValidSensorData(SensorDataDTO sensorData) {
+        SensorMeasurement measurement = new SensorMeasurement(
+                sensorData.getDeviceId(),
+                sensorData.getTimestamp(),
+                sensorData.getMeasurementValue()
+        );
+        SensorMeasurement savedMeasurement = measurementRepository.save(measurement);
+
+        log.info("Saved individual measurement: id={}, deviceId={}, timestamp={}, value={} kWh",
+                savedMeasurement.getId(),
+                savedMeasurement.getDeviceId(),
+                savedMeasurement.getTimestamp(),
+                savedMeasurement.getMeasurementValue());
+
+        updateHourlyAggregate(sensorData);
+
+        return savedMeasurement;
+    }
+
+    private void updateHourlyAggregate(SensorDataDTO sensorData) {
         LocalDateTime hourTimestamp = sensorData.getTimestamp()
                 .truncatedTo(ChronoUnit.HOURS);
 
@@ -77,7 +120,7 @@ public class MonitoringConsumerService {
 
         HourlyEnergyConsumption saved = consumptionRepository.save(hourlyData);
 
-        log.info("Saved hourly consumption: id={}, deviceId={}, hour={}, total={} kWh",
+        log.info("Updated hourly aggregate: id={}, deviceId={}, hour={}, total={} kWh",
                 saved.getId(), saved.getDeviceId(), saved.getHour(), saved.getTotalConsumption());
     }
 
@@ -135,8 +178,11 @@ public class MonitoringConsumerService {
             deviceCacheRepository.deleteById(deviceId);
             log.info("Device {} removed from cache", deviceId);
 
-            int deletedRows = consumptionRepository.deleteByDeviceId(deviceId);
-            log.info("Deleted {} consumption records for device {}", deletedRows, deviceId);
+            int deletedMeasurements = measurementRepository.deleteByDeviceId(deviceId);
+            log.info("Deleted {} individual measurements for device {}", deletedMeasurements, deviceId);
+
+            int deletedAggregates = consumptionRepository.deleteByDeviceId(deviceId);
+            log.info("Deleted {} hourly aggregates for device {}", deletedAggregates, deviceId);
 
         } catch (Exception e) {
             log.error("Failed to handle device deletion for {}: {}", deviceId, e.getMessage());

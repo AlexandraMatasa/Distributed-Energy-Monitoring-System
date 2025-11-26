@@ -9,7 +9,7 @@ import json
 import sys
 import time
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 
 RABBITMQ_HOST = 'localhost'
 RABBITMQ_PORT = 5672
@@ -19,12 +19,11 @@ RABBITMQ_PASS = 'kalo'
 SENSOR_EXCHANGE = 'sensor_exchange'
 ROUTING_KEY = 'sensor.data'
 
-INTERVAL_MINUTES = 10
+MEASUREMENT_INTERVAL_MINUTES = 10
+SLEEP_SECONDS = 2
+START_DAYS_AGO = 7
 
-
-def generate_measurement(base_load):
-    hour = datetime.now().hour
-
+def generate_measurement(base_load, hour):
     if 0 <= hour < 6:
         time_multiplier = 0.5 + (0.2 * random.random())
     elif 6 <= hour < 9:
@@ -38,33 +37,33 @@ def generate_measurement(base_load):
 
     random_variation = 0.9 + (0.2 * random.random())
 
-    measurement = base_load * time_multiplier * random_variation * (INTERVAL_MINUTES / 60.0)
+    measurement = base_load * time_multiplier * random_variation * (MEASUREMENT_INTERVAL_MINUTES / 60.0)
 
     return round(measurement, 3)
 
 
 def main():
-    if len(sys.argv) < 2:
+    if len(sys.argv) != 2:
         print("Usage: python producer.py <device_id>")
-        print("Example: python producer.py device-001")
         sys.exit(1)
 
     device_id = sys.argv[1]
-
     base_load = 0.5 + (1.5 * random.random())
+    current_timestamp = datetime.now() - timedelta(days=START_DAYS_AGO)
 
-    print("=" * 70)
+    print("=" * 80)
     print("Device Data Producer - Energy Management System")
-    print("=" * 70)
-    print(f"Device ID:       {device_id}")
-    print(f"Base Load:       {base_load:.3f} kWh/hour")
-    print(f"Interval:        Every {INTERVAL_MINUTES} minutes")
-    print(f"Exchange:        {SENSOR_EXCHANGE}")
-    print(f"Routing Key:     {ROUTING_KEY}")
-    print(f"RabbitMQ:        {RABBITMQ_HOST}:{RABBITMQ_PORT}")
-    print("=" * 70)
+    print("=" * 80)
+    print(f"Device ID:           {device_id}")
+    print(f"Base Load:           {base_load:.3f} kWh/hour")
+    print(f"Starting from:       {current_timestamp.strftime('%Y-%m-%d %H:%M:%S')} ({START_DAYS_AGO} days ago)")
+    print(f"Time increment:      {MEASUREMENT_INTERVAL_MINUTES} minutes per message")
+    print(f"Send interval:       {SLEEP_SECONDS} seconds (real time)")
+    print(f"Exchange:            {SENSOR_EXCHANGE}")
+    print(f"Routing Key:         {ROUTING_KEY}")
+    print(f"RabbitMQ:            {RABBITMQ_HOST}:{RABBITMQ_PORT}")
+    print("=" * 80)
     print()
-
 
     try:
         print("Connecting to RabbitMQ...")
@@ -88,16 +87,17 @@ def main():
 
         print(f"Connected to RabbitMQ")
         print(f"Exchange '{SENSOR_EXCHANGE}' ready")
-        print("\nPress Ctrl+C to stop\n")
+        print("\nPress Ctrl+C to stop")
+        print("=" * 80)
+        print()
 
         count = 0
 
         while True:
-            measurement = generate_measurement(base_load)
-            timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+            measurement = generate_measurement(base_load, current_timestamp.hour)
 
             message = {
-                "timestamp": timestamp,
+                "timestamp": current_timestamp.strftime("%Y-%m-%dT%H:%M:%S"),
                 "deviceId": device_id,
                 "measurementValue": measurement
             }
@@ -107,21 +107,25 @@ def main():
                 routing_key=ROUTING_KEY,
                 body=json.dumps(message),
                 properties=pika.BasicProperties(
-                    delivery_mode=2,  # persistent
+                    delivery_mode=2,
                     content_type='application/json'
                 )
             )
 
             count += 1
-            print(f"[{timestamp}] Sent #{count}: device={device_id}, value={measurement:.3f} kWh")
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Sent #{count}: "
+                  f"ts={current_timestamp.strftime('%Y-%m-%d %H:%M:%S')}, "
+                  f"value={measurement:.3f} kWh")
 
-            # Așteptăm (pentru test: 10 secunde, pentru producție: 600 secunde = 10 min)
-            time.sleep(10)  # Schimbă cu 600 pentru intervalul real de 10 minute
+            current_timestamp += timedelta(minutes=MEASUREMENT_INTERVAL_MINUTES)
+
+            time.sleep(SLEEP_SECONDS)
 
     except KeyboardInterrupt:
-        print("\n\n" + "=" * 70)
+        print("\n\n" + "=" * 80)
         print(f"Producer stopped. Total measurements sent: {count}")
-        print("=" * 70)
+        print(f"Final timestamp: {current_timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+        print("=" * 80)
     except Exception as e:
         print(f"\nError: {e}")
         import traceback

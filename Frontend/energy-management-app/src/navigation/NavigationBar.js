@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
     Collapse,
     Navbar,
@@ -13,11 +14,35 @@ import {
 
 function NavigationBar() {
     const [isOpen, setIsOpen] = useState(false);
-    const token = localStorage.getItem('token');
-    const role = localStorage.getItem('role');
-    const username = localStorage.getItem('username');
+    const [authState, setAuthState] = useState({
+        token: localStorage.getItem('token'),
+        role: localStorage.getItem('role'),
+        username: localStorage.getItem('username')
+    });
+
+    const location = useLocation();
+
+    useEffect(() => {
+        const updateAuthState = () => {
+            setAuthState({
+                token: localStorage.getItem('token'),
+                role: localStorage.getItem('role'),
+                username: localStorage.getItem('username')
+            });
+        };
+
+        updateAuthState();
+
+        window.addEventListener('storage', updateAuthState);
+
+        return () => {
+            window.removeEventListener('storage', updateAuthState);
+        };
+    }, [location]);
 
     const toggle = () => setIsOpen(!isOpen);
+
+    const { token, role, username } = authState;
 
     const handleLogout = () => {
         if (window.confirm('Are you sure you want to logout?')) {
@@ -57,9 +82,16 @@ function NavigationBar() {
                         )}
 
                         {token && role === 'CLIENT' && (
-                            <NavItem>
-                                <NavLink href="/devices">My Devices</NavLink>
-                            </NavItem>
+                            <>
+                                <NavItem>
+                                    <NavLink href="/devices">My Devices</NavLink>
+                                </NavItem>
+                                <NavItem>
+                                    <NavLink href="/monitoring">
+                                        Monitoring
+                                    </NavLink>
+                                </NavItem>
+                            </>
                         )}
 
                         {token ? (

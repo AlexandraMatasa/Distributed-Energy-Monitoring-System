@@ -7,5 +7,6 @@ export const HOST = {
 export const endpoint = {
     user: '/api1/user',
     device: '/api2/device',
-    auth: '/api3/auth'
+    auth: '/api3/auth',
+    monitoring: '/api4/api/monitoring'
 };

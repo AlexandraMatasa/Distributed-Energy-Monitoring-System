@@ -8,6 +8,7 @@ import DeviceContainer from './device/DeviceContainer';
 import AssignmentsContainer from './assignments/AssignmentsContainer';
 import AccessDenied from './navigation/AccessDenied';
 import ProtectedRoute from './navigation/ProtectedRoute';
+import MonitoringContainer from './monitoring/MonitoringContainer';
 
 function App() {
     return (
@@ -41,6 +42,15 @@ function App() {
                         element={
                             <ProtectedRoute allowedRoles={['ADMIN', 'CLIENT']}>
                                 <DeviceContainer />
+                            </ProtectedRoute>
+                        }
+                    />
+
+                    <Route
+                        path="/monitoring"
+                        element={
+                            <ProtectedRoute allowedRoles={['ADMIN', 'CLIENT']}>
+                                <MonitoringContainer />
                             </ProtectedRoute>
                         }
                     />

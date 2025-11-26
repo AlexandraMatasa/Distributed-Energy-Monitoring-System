@@ -80,6 +80,26 @@ http:
         - web
       service: frontend
 
+    monitoring-websocket:
+      rule: "PathPrefix(`/api4/ws`)"
+      entryPoints:
+        - web
+      service: monitoring-service-ws
+      middlewares:
+        - strip-monitoring
+      priority: 300
+
+    monitoring-service:
+      rule: "PathPrefix(`/api4`)"
+      entryPoints:
+        - web
+      service: monitoring-service
+      middlewares:
+        - cors-headers
+        - strip-monitoring
+        - auth-middleware
+      priority: 100
+
   middlewares:
     cors-headers:
       headers:
@@ -96,6 +116,9 @@ http:
           - "Authorization"
           - "Content-Type"
           - "Accept"
+          - "Sec-WebSocket-Extensions"
+          - "Sec-WebSocket-Key"
+          - "Sec-WebSocket-Version"
         accessControlAllowCredentials: true
         accessControlMaxAge: 100
         addVaryHeader: true
@@ -109,6 +132,9 @@ http:
     strip-auth:
       stripPrefix:
         prefixes: [ "/api3" ]
+    strip-monitoring:
+      stripPrefix:
+        prefixes: [ "/api4" ]
 
     auth-middleware:
       forwardAuth:
@@ -135,6 +161,17 @@ http:
       loadBalancer:
         servers:
           - url: "http://auth-service:8083" # Container name solved by Docker DNS
+
+    monitoring-service:
+      loadBalancer:
+        servers:
+          - url: "http://monitoring-service:8084" # Container name solved by Docker DNS
+
+    monitoring-service-ws:
+      loadBalancer:
+        servers:
+          - url: "http://monitoring-service:8084"
+        passHostHeader: true
 
     frontend:
       loadBalancer:

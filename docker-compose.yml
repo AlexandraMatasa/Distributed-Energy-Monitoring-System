@@ -180,6 +180,8 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: kalo
       RABBITMQ_PASSWORD: kalo
+    ports:
+      - "8084:8084"
     networks:
       - proxy-network
     labels:
