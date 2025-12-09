@@ -80,15 +80,6 @@ http:
         - web
       service: frontend
 
-    monitoring-websocket:
-      rule: "PathPrefix(`/api4/ws`)"
-      entryPoints:
-        - web
-      service: monitoring-service-ws
-      middlewares:
-        - strip-monitoring
-      priority: 300
-
     monitoring-service:
       rule: "PathPrefix(`/api4`)"
       entryPoints:
@@ -98,6 +89,25 @@ http:
         - cors-headers
         - strip-monitoring
         - auth-middleware
+      priority: 100
+
+    communication-websocket:
+      rule: "PathPrefix(`/api5/ws`)"
+      entryPoints:
+        - web
+      service: communication-service-ws
+      middlewares:
+        - strip-communication
+      priority: 300
+
+    communication-service:
+      rule: "PathPrefix(`/api5`)"
+      entryPoints:
+        - web
+      service: communication-service
+      middlewares:
+        - cors-headers
+        - strip-communication
       priority: 100
 
   middlewares:
@@ -135,6 +145,9 @@ http:
     strip-monitoring:
       stripPrefix:
         prefixes: [ "/api4" ]
+    strip-communication:
+      stripPrefix:
+        prefixes: [ "/api5" ]
 
     auth-middleware:
       forwardAuth:
@@ -167,10 +180,15 @@ http:
         servers:
           - url: "http://monitoring-service:8084" # Container name solved by Docker DNS
 
-    monitoring-service-ws:
+    communication-service:
       loadBalancer:
         servers:
-          - url: "http://monitoring-service:8084"
+          - url: "http://communication-service:8085"
+
+    communication-service-ws:
+      loadBalancer:
+        servers:
+          - url: "http://communication-service:8085"
         passHostHeader: true
 
     frontend:

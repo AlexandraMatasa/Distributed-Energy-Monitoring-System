@@ -87,12 +87,12 @@ function DeviceEditForm(props) {
 
                     <FormGroup>
                         <Label for="maxConsumption">
-                            Max Consumption (Watts) <span className="text-danger">*</span>
+                            Maximum Hourly Consumption (kW) <span className="text-danger">*</span>
                         </Label>
                         <Input
                             id="maxConsumption"
                             name="maxConsumption"
-                            placeholder="Enter max consumption in watts"
+                            placeholder="Enter max consumption in kW (e.g., 0.5 for 500W)"
                             type="number"
                             step="0.01"
                             min="0.01"

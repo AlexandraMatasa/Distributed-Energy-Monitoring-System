@@ -18,11 +18,23 @@ public class DeviceCache implements Serializable {
     @Column(name = "device_id")
     private UUID deviceId;
 
+    @Column(name = "device_name")
+    private String deviceName;
+
+    @Column(name = "max_consumption")
+    private Double maxConsumption;
+
+    @Column(name = "user_id")
+    @JdbcTypeCode(SqlTypes.UUID)
+    private UUID userId;
+
     public DeviceCache() {
     }
 
-    public DeviceCache(UUID deviceId) {
+    public DeviceCache(UUID deviceId, String deviceName, Double maxConsumption) {
         this.deviceId = deviceId;
+        this.deviceName = deviceName;
+        this.maxConsumption = maxConsumption;
     }
 
     public UUID getDeviceId() {
@@ -33,10 +45,37 @@ public class DeviceCache implements Serializable {
         this.deviceId = deviceId;
     }
 
+    public String getDeviceName() {
+        return deviceName;
+    }
+
+    public void setDeviceName(String deviceName) {
+        this.deviceName = deviceName;
+    }
+
+    public Double getMaxConsumption() {
+        return maxConsumption;
+    }
+
+    public void setMaxConsumption(Double maxConsumption) {
+        this.maxConsumption = maxConsumption;
+    }
+
+    public UUID getUserId() {
+        return userId;
+    }
+
+    public void setUserId(UUID userId) {
+        this.userId = userId;
+    }
+
     @Override
     public String toString() {
         return "DeviceCache{" +
                 "deviceId=" + deviceId +
+                ", deviceName='" + deviceName + '\'' +
+                ", maxConsumption=" + maxConsumption +
+                ", userId=" + userId +
                 '}';
     }
 }

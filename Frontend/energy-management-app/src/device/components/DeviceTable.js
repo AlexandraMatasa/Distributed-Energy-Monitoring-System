@@ -49,7 +49,7 @@ function DeviceTable(props) {
                         </td>
                         <td>{row.description || '-'}</td>
                         <td>
-                            {row.maxConsumption} W
+                            {row.maxConsumption} kW
                         </td>
 
                         {role === 'ADMIN' && (

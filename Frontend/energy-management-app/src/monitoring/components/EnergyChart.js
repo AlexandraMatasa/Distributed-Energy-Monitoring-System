@@ -24,7 +24,7 @@ ChartJS.register(
     Legend
 );
 
-function EnergyChart({ device, token }) {
+function EnergyChart({ device, token, userId, onAlert }) {
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [chartData, setChartData] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -93,7 +93,7 @@ function EnergyChart({ device, token }) {
     }, [device?.id, selectedDate]);
 
     useEffect(() => {
-        if (!device || !device.id) return;
+        if (!device || !device.id || !userId) return;
 
         if (currentDeviceId.current && currentDeviceId.current !== device.id) {
             console.log('Device changed, disconnecting WebSocket...');
@@ -135,17 +135,22 @@ function EnergyChart({ device, token }) {
                 } catch (e) {
                     console.error('Error parsing WebSocket data:', e, data);
                 }
+            } else if (type === 'alert') {
+                console.log('ALERT RECEIVED:', data);
+                if (onAlert) {
+                    onAlert(data.data);
+                }
             }
         };
 
         WebSocketService.addListener(listenerId, handleWSMessage);
-        WebSocketService.connect(device.id);
+        WebSocketService.connect(device.id, userId);
 
         return () => {
             console.log('Cleaning up WebSocket listener for device:', device.id);
             WebSocketService.removeListener(listenerId);
         };
-    }, [device?.id, debouncedFetch]);
+    }, [device?.id, debouncedFetch, onAlert]);
 
     const processChartData = (hourlyData) => {
         const hours = Array.from({ length: 24 }, (_, i) => i);

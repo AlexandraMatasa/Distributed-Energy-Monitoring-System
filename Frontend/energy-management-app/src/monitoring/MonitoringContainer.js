@@ -2,6 +2,7 @@ import React, { Component } from 'react';
 import { Card, CardHeader, CardBody, Form, FormGroup, Label, Input, Button, Alert } from 'reactstrap';
 import API_DEVICES from '../device/api/device-api';
 import EnergyChart from './components/EnergyChart';
+import AlertNotification from './components/AlertNotification';
 
 class MonitoringContainer extends Component {
     constructor(props) {
@@ -11,7 +12,9 @@ class MonitoringContainer extends Component {
             selectedDeviceId: '',
             selectedDevice: null,
             isLoading: true,
-            error: null
+            error: null,
+            alerts: [],
+            alertIdCounter: 0
         };
     }
 
@@ -64,6 +67,19 @@ class MonitoringContainer extends Component {
         }
     }
 
+    handleNewAlert = (alert) => {
+        this.setState(prevState => ({
+            alerts: [...prevState.alerts, { ...alert, id: prevState.alertIdCounter }],
+            alertIdCounter: prevState.alertIdCounter + 1
+        }));
+    }
+
+    dismissAlert = (id) => {
+        this.setState(prevState => ({
+            alerts: prevState.alerts.filter(a => a.id !== id)
+        }));
+    }
+
     handleDeviceChange = (e) => {
         const deviceId = e.target.value;
         const device = this.state.devices.find(d => d.id === deviceId);
@@ -74,11 +90,19 @@ class MonitoringContainer extends Component {
     }
 
     render() {
-        const { devices, selectedDeviceId, selectedDevice, isLoading, error } = this.state;
+        const { devices, selectedDeviceId, selectedDevice, isLoading, error, alerts } = this.state;
         const token = localStorage.getItem('token');
-
+        const userId = localStorage.getItem('userId');
         return (
             <div className="page-container">
+                {alerts.map(alert => (
+                    <AlertNotification
+                        key={alert.id}
+                        alert={alert}
+                        onDismiss={() => this.dismissAlert(alert.id)}
+                    />
+                ))}
+
                 <Card>
                     <CardHeader>
                         <strong>Energy Consumption Monitoring</strong>
@@ -122,7 +146,7 @@ class MonitoringContainer extends Component {
                                         >
                                             {devices.map(device => (
                                                 <option key={device.id} value={device.id}>
-                                                    {device.name} - {device.maxConsumption}W
+                                                    {device.name} - {device.maxConsumption}kW
                                                 </option>
                                             ))}
                                         </Input>
@@ -133,6 +157,8 @@ class MonitoringContainer extends Component {
                                     <EnergyChart
                                         device={selectedDevice}
                                         token={token}
+                                        userId={userId}
+                                        onAlert={this.handleNewAlert}
                                     />
                                 )}
                             </>

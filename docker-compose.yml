@@ -187,6 +187,28 @@ services:
     labels:
       - "traefik.enable=true"
 
+  communication-service:
+    build:
+      context: ./CommunicationService
+      dockerfile: Dockerfile
+    container_name: communication-service
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: kalo
+      RABBITMQ_PASSWORD: kalo
+      PORT: 8085
+    ports:
+      - "8085:8085"
+    networks:
+      - proxy-network
+    labels:
+      - "traefik.enable=true"
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./Frontend/energy-management-app

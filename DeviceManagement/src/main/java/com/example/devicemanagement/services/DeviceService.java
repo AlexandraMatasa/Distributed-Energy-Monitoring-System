@@ -229,6 +229,8 @@ public class DeviceService {
         assignmentRepository.save(assignment);
 
         LOGGER.debug("Device {} was assigned to user {}", deviceId, userId);
+
+        publishDeviceAssignedEvent(deviceId, userId);
     }
 
     @Transactional
@@ -242,6 +244,45 @@ public class DeviceService {
         assignmentRepository.deleteByDeviceId(deviceId);
 
         LOGGER.debug("Device {} was unassigned", deviceId);
+
+        publishDeviceUnassignedEvent(deviceId);
+    }
+
+    private void publishDeviceAssignedEvent(UUID deviceId, UUID userId) {
+        try {
+            SyncMessageDTO syncMessage = new SyncMessageDTO();
+            syncMessage.setEventType("DEVICE_ASSIGNED");
+            syncMessage.setDeviceId(deviceId);
+            syncMessage.setUserId(userId);
+
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.SYNC_EXCHANGE,
+                    "",
+                    syncMessage
+            );
+
+            LOGGER.info("Published DEVICE_ASSIGNED event: deviceId={}, userId={}", deviceId, userId);
+        } catch (Exception e) {
+            LOGGER.error("Failed to publish DEVICE_ASSIGNED event: {}", e.getMessage());
+        }
+    }
+
+    private void publishDeviceUnassignedEvent(UUID deviceId) {
+        try {
+            SyncMessageDTO syncMessage = new SyncMessageDTO();
+            syncMessage.setEventType("DEVICE_UNASSIGNED");
+            syncMessage.setDeviceId(deviceId);
+
+            rabbitTemplate.convertAndSend(
+                    RabbitMQConfig.SYNC_EXCHANGE,
+                    "",
+                    syncMessage
+            );
+
+            LOGGER.info("Published DEVICE_UNASSIGNED event for deviceId: {}", deviceId);
+        } catch (Exception e) {
+            LOGGER.error("Failed to publish DEVICE_UNASSIGNED event: {}", e.getMessage());
+        }
     }
 
     public List<DeviceWithUserDTO> findDevicesByUserId(UUID userId) {

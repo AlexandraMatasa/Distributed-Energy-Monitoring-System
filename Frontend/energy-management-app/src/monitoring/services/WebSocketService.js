@@ -6,16 +6,20 @@ class WebSocketService {
         this.maxReconnectAttempts = 5;
         this.reconnectDelay = 3000;
         this.currentDeviceId = null;
+        this.currentUserId = null;
     }
 
-    connect(deviceId) {
+    connect(deviceId, userId) {
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
             console.log('WebSocket already connected');
             if (this.currentDeviceId !== deviceId) {
                 this.currentDeviceId = deviceId;
+                this.currentUserId = userId;
+
                 this.send({
                     action: 'subscribe',
-                    deviceId: deviceId
+                    deviceId: deviceId,
+                    userId: userId
                 });
             }
             return;
@@ -30,10 +34,12 @@ class WebSocketService {
         }
 
         this.currentDeviceId = deviceId;
+        this.currentUserId = userId;
 
-        const wsUrl = 'ws://localhost:8084/ws/monitoring';
-        console.log('🔌 Connecting to WebSocket:', wsUrl);
-        console.log('🔌 Device ID:', deviceId);
+        const wsUrl = 'ws://localhost:8085/ws/notifications';
+        console.log('Connecting to WebSocket:', wsUrl);
+        console.log('Device ID:', deviceId);
+        console.log('User ID:', userId);
 
         try {
             this.ws = new WebSocket(wsUrl);
@@ -44,7 +50,8 @@ class WebSocketService {
 
                 this.send({
                     action: 'subscribe',
-                    deviceId: deviceId
+                    deviceId: deviceId,
+                    userId: userId
                 });
             };
 
@@ -55,6 +62,8 @@ class WebSocketService {
 
                     if (message.type === 'newMeasurement') {
                         this.notifyListeners('newMeasurement', message);
+                    } else if (message.type === 'alert') {
+                        this.notifyListeners('alert', message);
                     } else if (message.type === 'subscribed') {
                         console.log('Successfully subscribed to device:', message.deviceId);
                         this.notifyListeners('subscribed', message);
@@ -80,8 +89,8 @@ class WebSocketService {
                     this.reconnectAttempts++;
                     console.log(`Reconnecting... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
                     setTimeout(() => {
-                        if (this.currentDeviceId) {
-                            this.connect(this.currentDeviceId);
+                        if (this.currentDeviceId && this.currentUserId) {
+                            this.connect(this.currentDeviceId, this.currentUserId);
                         }
                     }, this.reconnectDelay);
                 } else if (this.reconnectAttempts >= this.maxReconnectAttempts) {
@@ -139,6 +148,7 @@ class WebSocketService {
         this.listeners.clear();
         this.reconnectAttempts = 0;
         this.currentDeviceId = null;
+        this.currentUserId = null;
     }
 
     isConnected() {

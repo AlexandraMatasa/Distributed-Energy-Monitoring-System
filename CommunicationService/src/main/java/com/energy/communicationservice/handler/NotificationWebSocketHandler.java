@@ -1,4 +1,4 @@
-package com.energy.monitoringservice.websocket;
+package com.energy.communicationservice.handler;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -16,15 +16,16 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
-public class MonitoringWebSocketHandler extends TextWebSocketHandler {
+public class NotificationWebSocketHandler extends TextWebSocketHandler {
 
-    private static final Logger log = LoggerFactory.getLogger(MonitoringWebSocketHandler.class);
+    private static final Logger log = LoggerFactory.getLogger(NotificationWebSocketHandler.class);
 
     private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
     private final Map<String, UUID> sessionDeviceMap = new ConcurrentHashMap<>();
+    private final Map<String, UUID> sessionUserMap = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper;
 
-    public MonitoringWebSocketHandler() {
+    public NotificationWebSocketHandler() {
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
     }
@@ -47,13 +48,20 @@ public class MonitoringWebSocketHandler extends TextWebSocketHandler {
 
             if ("subscribe".equals(action)) {
                 String deviceIdStr = data.get("deviceId");
+                String userIdStr = data.get("userId");
+
                 UUID deviceId = UUID.fromString(deviceIdStr);
+                UUID userId = UUID.fromString(userIdStr);
+
                 sessionDeviceMap.put(session.getId(), deviceId);
-                log.info("Session {} subscribed to device {}", session.getId(), deviceId);
+                sessionUserMap.put(session.getId(), userId);
+
+                log.info("Session {} subscribed to device {} for user {}", session.getId(), deviceId, userId);
 
                 Map<String, String> response = Map.of(
                         "type", "subscribed",
                         "deviceId", deviceIdStr,
+                        "userId", userIdStr,
                         "message", "Successfully subscribed to device updates"
                 );
                 session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
@@ -68,20 +76,16 @@ public class MonitoringWebSocketHandler extends TextWebSocketHandler {
         String sessionId = session.getId();
         sessions.remove(sessionId);
         UUID deviceId = sessionDeviceMap.remove(sessionId);
-        log.info("WebSocket connection closed: {} (was subscribed to device: {})", sessionId, deviceId);
+        UUID userId = sessionUserMap.remove(sessionId);
+        log.info("WebSocket connection closed: {} (device: {}, user: {})", sessionId, deviceId, userId);
     }
 
     public void broadcastNewMeasurement(UUID deviceId, Object measurementData) {
-        log.info("Starting broadcast for device: {}", deviceId);
-        log.info("Active sessions: {}", sessions.size());
-        log.info("Device subscriptions: {}", sessionDeviceMap.size());
+        log.info("Broadcasting measurement update for device: {}", deviceId);
 
         sessionDeviceMap.forEach((sessionId, subscribedDeviceId) -> {
-            log.info("Checking session {} subscribed to {}", sessionId, subscribedDeviceId);
-
             if (subscribedDeviceId.equals(deviceId)) {
                 WebSocketSession session = sessions.get(sessionId);
-                log.info("Found matching session {} for device {}", sessionId, deviceId);
 
                 if (session != null && session.isOpen()) {
                     try {
@@ -92,18 +96,36 @@ public class MonitoringWebSocketHandler extends TextWebSocketHandler {
                         );
                         String json = objectMapper.writeValueAsString(message);
                         session.sendMessage(new TextMessage(json));
-                        log.info("Sent measurement to session {}: {}", sessionId, json);
+                        log.info("Sent measurement to session {}", sessionId);
                     } catch (IOException e) {
-                        log.error("Error sending message to session {}: {}", sessionId, e.getMessage());
+                        log.error("Error sending measurement to session {}: {}", sessionId, e.getMessage());
                     }
-                } else {
-                    log.warn("Session {} is null or closed", sessionId);
                 }
-            } else {
-                log.info("Skipping session {} (subscribed to {})", sessionId, subscribedDeviceId);
             }
         });
+    }
 
-        log.info("Broadcast complete for device: {}", deviceId);
+    public void broadcastAlertToUser(UUID userId, Object alertData) {
+        log.info("Broadcasting alert to user: {}", userId);
+
+        sessionUserMap.forEach((sessionId, subscribedUserId) -> {
+            if (subscribedUserId.equals(userId)) {
+                WebSocketSession session = sessions.get(sessionId);
+
+                if (session != null && session.isOpen()) {
+                    try {
+                        Map<String, Object> message = Map.of(
+                                "type", "alert",
+                                "data", alertData
+                        );
+                        String json = objectMapper.writeValueAsString(message);
+                        session.sendMessage(new TextMessage(json));
+                        log.info("Sent alert to user {} session {}", userId, sessionId);
+                    } catch (IOException e) {
+                        log.error("Error sending alert to session {}: {}", sessionId, e.getMessage());
+                    }
+                }
+            }
+        });
     }
 }
