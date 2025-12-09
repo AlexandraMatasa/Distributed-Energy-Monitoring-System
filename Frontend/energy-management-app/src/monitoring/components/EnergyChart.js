@@ -110,14 +110,14 @@ function EnergyChart({ device, token }) {
                 try {
                     console.log('New measurement received:', data);
 
-                    const incomingTimestamp = data.data?.timestamp || data.timestamp;
+                    const incomingHour = data.data?.hour;
 
-                    if (!incomingTimestamp) {
-                        console.warn('No timestamp in measurement data');
+                    if (!incomingHour) {
+                        console.warn('Received update without required hour field.');
                         return;
                     }
 
-                    const incomingDate = incomingTimestamp.split('T')[0];
+                    const incomingDate = incomingHour.split('T')[0];
                     const currentSelectedDate = selectedDateRef.current;
 
                     console.log('Date comparison:', {

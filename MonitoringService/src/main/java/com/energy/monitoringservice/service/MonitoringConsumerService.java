@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -70,19 +71,30 @@ public class MonitoringConsumerService {
             return;
         }
 
-        SensorMeasurement savedMeasurement = processValidSensorData(sensorData);
+        processValidSensorData(sensorData);
 
-        try {
-            Map<String, Object> wsData = new HashMap<>();
-            wsData.put("id", savedMeasurement.getId().toString());
-            wsData.put("timestamp", savedMeasurement.getTimestamp().toString());
-            wsData.put("measurementValue", savedMeasurement.getMeasurementValue());
+        LocalDateTime currentTimestamp = sensorData.getTimestamp();
 
-            log.info("Broadcasting WebSocket message to device: {}", sensorData.getDeviceId());
-            webSocketHandler.broadcastNewMeasurement(sensorData.getDeviceId(), wsData);
-            log.info("WebSocket broadcast completed");
-        } catch (Exception e) {
-            log.error("Failed to broadcast WebSocket message: {}", e.getMessage(), e);
+        if (currentTimestamp.getMinute() == 0 && currentTimestamp.getSecond() == 0) {
+            LocalDateTime previousHour = currentTimestamp.truncatedTo(ChronoUnit.HOURS).minusHours(1);
+            UUID deviceId = sensorData.getDeviceId();
+
+            consumptionRepository.findByDeviceIdAndHour(deviceId, previousHour)
+                    .ifPresent(hourlyData -> {
+                        try {
+                            Map<String, Object> wsData = new HashMap<>();
+                            wsData.put("hour", hourlyData.getHour().toString());
+                            wsData.put("totalConsumption", hourlyData.getTotalConsumption());
+                            wsData.put("deviceId", deviceId.toString()); // Adaugă deviceId pentru filtrare
+
+                            log.info("Broadcasting HOURLY AGGREGATE for device {} hour: {}", deviceId, previousHour);
+                            webSocketHandler.broadcastNewMeasurement(deviceId, wsData);
+                            log.info("WebSocket broadcast completed for hour: {}", previousHour);
+
+                        } catch (Exception e) {
+                            log.error("Failed to broadcast WebSocket message for {}: {}", deviceId, e.getMessage(), e);
+                        }
+                    });
         }
     }
 
@@ -100,39 +112,40 @@ public class MonitoringConsumerService {
                 savedMeasurement.getTimestamp(),
                 savedMeasurement.getMeasurementValue());
 
-        updateHourlyAggregate(sensorData);
+        LocalDateTime currentTimestamp = sensorData.getTimestamp();
+        if (currentTimestamp.getMinute() == 0 && currentTimestamp.getSecond() == 0) {
+            LocalDateTime previousHour = currentTimestamp.truncatedTo(ChronoUnit.HOURS).minusHours(1);
+            createHourlyAggregateForCompletedHour(sensorData.getDeviceId(), previousHour);
+        }
 
         return savedMeasurement;
     }
 
-    private void updateHourlyAggregate(SensorDataDTO sensorData) {
-        LocalDateTime hourTimestamp = sensorData.getTimestamp()
-                .truncatedTo(ChronoUnit.HOURS);
+    private void createHourlyAggregateForCompletedHour(UUID deviceId, LocalDateTime hourTimestamp) {
+        LocalDateTime hourStart = hourTimestamp;
+        LocalDateTime hourEnd = hourTimestamp.plusHours(1);
 
-        HourlyEnergyConsumption hourlyData = consumptionRepository
-                .findByDeviceIdAndHour(sensorData.getDeviceId(), hourTimestamp)
-                .orElse(null);
+        List<SensorMeasurement> measurements = measurementRepository.findByDeviceIdAndTimestampBetween(
+                deviceId, hourStart, hourEnd);
 
-        if (hourlyData == null) {
-            hourlyData = new HourlyEnergyConsumption();
-            hourlyData.setDeviceId(sensorData.getDeviceId());
-            hourlyData.setHour(hourTimestamp);
-            hourlyData.setTotalConsumption(sensorData.getMeasurementValue());
-            hourlyData.setCreatedAt(LocalDateTime.now());
-
-            log.debug("Creating new hourly record for device {} at hour {}",
-                    sensorData.getDeviceId(), hourTimestamp);
-        } else {
-            double newTotal = hourlyData.getTotalConsumption() + sensorData.getMeasurementValue();
-            hourlyData.setTotalConsumption(newTotal);
-
-            log.debug("Updating hourly record for device {} at hour {}. New total: {} kWh",
-                    sensorData.getDeviceId(), hourTimestamp, newTotal);
+        if (measurements.isEmpty()) {
+            log.debug("No measurements found for device {} in hour {}", deviceId, hourTimestamp);
+            return;
         }
+
+        double totalConsumption = measurements.stream()
+                .mapToDouble(SensorMeasurement::getMeasurementValue)
+                .sum();
+
+        HourlyEnergyConsumption hourlyData = new HourlyEnergyConsumption();
+        hourlyData.setDeviceId(deviceId);
+        hourlyData.setHour(hourTimestamp);
+        hourlyData.setTotalConsumption(totalConsumption);
+        hourlyData.setCreatedAt(LocalDateTime.now());
 
         HourlyEnergyConsumption saved = consumptionRepository.save(hourlyData);
 
-        log.info("Updated hourly aggregate: id={}, deviceId={}, hour={}, total={} kWh",
+        log.info("Created hourly aggregate for COMPLETED hour: id={}, deviceId={}, hour={}, total={} kWh",
                 saved.getId(), saved.getDeviceId(), saved.getHour(), saved.getTotalConsumption());
     }
 
