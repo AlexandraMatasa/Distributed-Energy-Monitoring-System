@@ -84,6 +84,7 @@ function ChatWidget() {
         <>
             {!isOpen && (
                 <div className="chat-button" onClick={toggleChat}>
+                    <span style={{fontSize: '14px', fontWeight: 'bold'}}>CHAT</span>
                     {unreadCount > 0 && (
                         <Badge color="danger" className="chat-badge">
                             {unreadCount}
