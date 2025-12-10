@@ -9,6 +9,7 @@ import AssignmentsContainer from './assignments/AssignmentsContainer';
 import AccessDenied from './navigation/AccessDenied';
 import ProtectedRoute from './navigation/ProtectedRoute';
 import MonitoringContainer from './monitoring/MonitoringContainer';
+import ChatWidget from './monitoring/components/ChatWidget';
 
 function App() {
     return (
@@ -54,7 +55,9 @@ function App() {
                             </ProtectedRoute>
                         }
                     />
+
                 </Routes>
+                <ChatWidget />
             </div>
         </Router>
     );
