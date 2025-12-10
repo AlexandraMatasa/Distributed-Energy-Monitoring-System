@@ -12,6 +12,7 @@ public class ChatRuleService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatRuleService.class);
     private final Map<Pattern, String> rules = new LinkedHashMap<>();
+    public static final String HUMAN_HANDOFF_TRIGGER = "HUMAN_HANDOFF_REQUESTED";
 
     public ChatRuleService() {
         initializeRules();
@@ -73,10 +74,15 @@ public class ChatRuleService {
                 "New user accounts can only be created by system administrators. Please contact your organization's admin to request an account."
         );
 
-
+        // Human assistance trigger
         rules.put(
-                Pattern.compile(".*\\b(contact|reach|talk to|speak with|email).*(admin|administrator|support|help desk)\\b.*", Pattern.CASE_INSENSITIVE),
-                "You're currently chatting with our automated support system. For direct admin assistance, your message will be forwarded to an available administrator who will respond shortly."
+                Pattern.compile(
+                        ".*\\b(talk to|speak to|speak with|connect me|transfer me).*(human|person|agent|admin|administrator|support|representative)\\b.*|" +
+                                ".*\\b(human|real person|actual person|live agent|live support)\\b.*|" +
+                                ".*\\b(i need|i want|can i).*(talk to|speak to|speak with).*(human|person|someone|admin|administrator|real person)\\b.*",
+                        Pattern.CASE_INSENSITIVE
+                ),
+                HUMAN_HANDOFF_TRIGGER
         );
 
         rules.put(
@@ -112,6 +118,11 @@ public class ChatRuleService {
 
         log.info("No rule matched for message: {}", userMessage);
         return Optional.empty();
+    }
+
+    public boolean isHumanHandoffRequested(String userMessage) {
+        Optional<String> response = matchRule(userMessage);
+        return response.isPresent() && HUMAN_HANDOFF_TRIGGER.equals(response.get());
     }
 
     public int getRuleCount() {

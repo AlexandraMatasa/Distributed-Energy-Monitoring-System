@@ -10,8 +10,11 @@ import AccessDenied from './navigation/AccessDenied';
 import ProtectedRoute from './navigation/ProtectedRoute';
 import MonitoringContainer from './monitoring/MonitoringContainer';
 import ChatWidget from './monitoring/components/ChatWidget';
+import AdminChatPanel from './admin/AdminChatPanel';
 
 function App() {
+    const role = localStorage.getItem('role');
+
     return (
         <Router>
             <div className="App">
@@ -56,8 +59,17 @@ function App() {
                         }
                     />
 
+                    <Route
+                        path="/admin-chat"
+                        element={
+                            <ProtectedRoute allowedRoles={['ADMIN']}>
+                                <AdminChatPanel />
+                            </ProtectedRoute>
+                        }
+                    />
                 </Routes>
-                <ChatWidget />
+
+                {role === 'CLIENT' && <ChatWidget />}
             </div>
         </Router>
     );

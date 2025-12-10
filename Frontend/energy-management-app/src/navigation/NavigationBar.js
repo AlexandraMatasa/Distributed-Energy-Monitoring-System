@@ -78,6 +78,9 @@ function NavigationBar() {
                                 <NavItem>
                                     <NavLink href="/assignments">Assignments</NavLink>
                                 </NavItem>
+                                <NavItem>
+                                    <NavLink href="/admin-chat">Customer Support</NavLink>
+                                </NavItem>
                             </>
                         )}
 

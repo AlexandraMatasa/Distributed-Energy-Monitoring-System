@@ -1,7 +1,9 @@
 package com.energy.communicationservice.handler;
 
 import com.energy.communicationservice.dto.ChatMessageDTO;
+import com.energy.communicationservice.dto.ChatSessionDTO;
 import com.energy.communicationservice.service.ChatService;
+import com.energy.communicationservice.service.ChatSessionManager;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.slf4j.Logger;
@@ -14,6 +16,7 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,10 +33,12 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     private final ObjectMapper objectMapper;
     private final ChatService chatService;
+    private final ChatSessionManager sessionManager;
 
     @Autowired
-    public ChatWebSocketHandler(ChatService chatService) {
+    public ChatWebSocketHandler(ChatService chatService, ChatSessionManager sessionManager) {
         this.chatService = chatService;
+        this.sessionManager = sessionManager;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.registerModule(new JavaTimeModule());
     }
@@ -56,6 +61,12 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 handleRegister(session, data);
             } else if ("message".equals(action)) {
                 handleMessage(session, data);
+            } else if ("get_sessions".equals(action)) {
+                handleGetSessions(session);
+            } else if ("get_conversation".equals(action)) {
+                handleGetConversation(session, data);
+            } else if ("mark_read".equals(action)) {
+                handleMarkRead(session, data);
             }
 
         } catch (Exception e) {
@@ -77,6 +88,8 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         if ("ADMIN".equals(role)) {
             adminSessions.put(session.getId(), session);
             log.info("Registered ADMIN session: {} for user: {}", session.getId(), username);
+
+            sendSessionsList(session);
         } else {
             clientSessions.put(session.getId(), session);
             log.info("Registered CLIENT session: {} for user: {}", session.getId(), username);
@@ -113,16 +126,80 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
             if (botResponse != null) {
                 sendMessageToSession(session, botResponse);
+
+                notifyAdminsOfNewMessage(userId);
             } else {
                 forwardToAdmins(userMessage);
+
+                broadcastSessionsToAdmins();
             }
         } else if ("ADMIN".equals(role)) {
             String targetUserIdStr = (String) data.get("targetUserId");
             if (targetUserIdStr != null) {
                 UUID targetUserId = UUID.fromString(targetUserIdStr);
+
+                sessionManager.addMessageToSession(targetUserId, userMessage);
+
                 sendMessageToUser(targetUserId, userMessage);
+
+                broadcastSessionsToAdmins();
             }
         }
+    }
+
+    private void handleGetSessions(WebSocketSession session) throws IOException {
+        sendSessionsList(session);
+    }
+
+    private void handleGetConversation(WebSocketSession session, Map<String, Object> data) throws IOException {
+        String userIdStr = (String) data.get("userId");
+        UUID userId = UUID.fromString(userIdStr);
+
+        ChatSessionDTO chatSession = sessionManager.getSession(userId);
+        if (chatSession != null) {
+            Map<String, Object> response = Map.of(
+                    "type", "conversation_history",
+                    "data", chatSession
+            );
+            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
+        } else {
+            sendError(session, "Session not found");
+        }
+    }
+
+    private void handleMarkRead(WebSocketSession session, Map<String, Object> data) throws IOException {
+        String userIdStr = (String) data.get("userId");
+        UUID userId = UUID.fromString(userIdStr);
+
+        sessionManager.markSessionAsRead(userId);
+
+        broadcastSessionsToAdmins();
+    }
+
+    private void sendSessionsList(WebSocketSession session) throws IOException {
+        List<ChatSessionDTO> sessions = sessionManager.getHumanHandoffSessions();
+        Map<String, Object> response = Map.of(
+                "type", "sessions_list",
+                "data", sessions
+        );
+        session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
+        log.info("Sent {} active sessions to admin", sessions.size());
+    }
+
+    private void broadcastSessionsToAdmins() {
+        log.info("Broadcasting sessions list to {} admin(s)", adminSessions.size());
+        for (WebSocketSession adminSession : adminSessions.values()) {
+            try {
+                sendSessionsList(adminSession);
+            } catch (IOException e) {
+                log.error("Error broadcasting to admin: {}", e.getMessage());
+            }
+        }
+    }
+
+    private void notifyAdminsOfNewMessage(UUID userId) {
+        log.info("Notifying admins of new message from user: {}", userId);
+        broadcastSessionsToAdmins();
     }
 
     private void sendMessageToSession(WebSocketSession session, ChatMessageDTO chatMessage) {
@@ -174,12 +251,12 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         UUID userId = sessionUserMap.remove(sessionId);
 
         clientSessions.remove(sessionId);
-        adminSessions.remove(sessionId);
+        boolean wasAdmin = adminSessions.remove(sessionId) != null;
 
         if (userId != null) {
             userSessionMap.remove(userId);
         }
 
-        log.info("Chat WebSocket closed: {} (user: {})", sessionId, userId);
+        log.info("Chat WebSocket closed: {} (user: {}, was admin: {})", sessionId, userId, wasAdmin);
     }
 }
