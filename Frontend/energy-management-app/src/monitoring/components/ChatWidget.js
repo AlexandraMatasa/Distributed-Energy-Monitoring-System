@@ -62,6 +62,22 @@ function ChatWidget() {
         }
     };
 
+    const formatMessageTime = (timestamp) => {
+        if (!timestamp) return '';
+
+        try {
+            const date = new Date(timestamp);
+            if (isNaN(date.getTime())) {
+                console.warn('Invalid timestamp:', timestamp);
+                return '';
+            }
+            return date.toLocaleTimeString();
+        } catch (error) {
+            console.error('Error formatting timestamp:', error, timestamp);
+            return '';
+        }
+    };
+
     if (role !== 'CLIENT') return null;
 
     return (
@@ -111,7 +127,7 @@ function ChatWidget() {
                                     <div className="message-header">
                                         <strong>{msg.username || msg.role}</strong>
                                         <small className="text-muted ms-2">
-                                            {new Date(msg.timestamp).toLocaleTimeString()}
+                                            {formatMessageTime(msg.timestamp)}
                                         </small>
                                     </div>
                                     <div className="message-content">

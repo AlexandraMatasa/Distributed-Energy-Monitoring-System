@@ -32,8 +32,28 @@ function AdminChatPanel() {
                 console.log('Updated sessions list:', data.data);
             } else if (type === 'chat_message') {
                 const message = data.data;
+
+                if (message.userId === userId && message.role === 'ADMIN') {
+                    console.log('Ignoring own message (already in conversation from optimistic update)');
+                    ChatService.send({ action: 'get_sessions' });
+                    return;
+                }
+
                 if (selectedSession && message.userId === selectedSession.userId) {
-                    setConversationHistory(prev => [...prev, message]);
+                    setConversationHistory(prev => {
+                        const messageExists = prev.some(m =>
+                            m.message === message.message &&
+                            m.role === message.role &&
+                            Math.abs(new Date(m.timestamp) - new Date(message.timestamp)) < 2000 // within 2 seconds
+                        );
+
+                        if (messageExists) {
+                            console.log('Duplicate message detected, skipping');
+                            return prev;
+                        }
+
+                        return [...prev, message];
+                    });
                 }
 
                 ChatService.send({ action: 'get_sessions' });
@@ -74,6 +94,17 @@ function AdminChatPanel() {
 
     const handleSendMessage = () => {
         if (inputMessage.trim() && selectedSession) {
+            const optimisticMessage = {
+                userId: userId,
+                username: username,
+                role: 'ADMIN',
+                message: inputMessage.trim(),
+                timestamp: new Date().toISOString(),
+                sessionId: selectedSession.sessionId
+            };
+
+            setConversationHistory(prev => [...prev, optimisticMessage]);
+
             ChatService.sendMessage(inputMessage.trim(), selectedSession.userId);
             setInputMessage('');
         }
@@ -87,18 +118,43 @@ function AdminChatPanel() {
     };
 
     const formatTime = (timestamp) => {
-        const date = new Date(timestamp);
-        const now = new Date();
-        const diffMs = now - date;
-        const diffMins = Math.floor(diffMs / 60000);
-        const diffHours = Math.floor(diffMs / 3600000);
-        const diffDays = Math.floor(diffMs / 86400000);
+        if (!timestamp) return 'Just now';
 
-        if (diffMins < 1) return 'Just now';
-        if (diffMins < 60) return `${diffMins}m ago`;
-        if (diffHours < 24) return `${diffHours}h ago`;
-        if (diffDays < 7) return `${diffDays}d ago`;
-        return date.toLocaleDateString();
+        try {
+            // Try parsing as ISO string first
+            let date = new Date(timestamp);
+
+            // If invalid, try parsing as array format [year, month, day, hour, minute, second, nano]
+            if (isNaN(date.getTime()) && Array.isArray(timestamp)) {
+                date = new Date(
+                    timestamp[0],
+                    timestamp[1] - 1,
+                    timestamp[2],
+                    timestamp[3] || 0,
+                    timestamp[4] || 0,
+                    timestamp[5] || 0
+                );
+            }
+
+            if (isNaN(date.getTime())) {
+                return 'Just now';
+            }
+
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
+
+            if (diffMins < 1) return 'Just now';
+            if (diffMins < 60) return `${diffMins}m ago`;
+            if (diffHours < 24) return `${diffHours}h ago`;
+            if (diffDays < 7) return `${diffDays}d ago`;
+            return date.toLocaleDateString();
+        } catch (error) {
+            console.error('Error formatting time:', error, timestamp);
+            return 'Just now';
+        }
     };
 
     const getLastMessage = (session) => {
@@ -107,6 +163,21 @@ function AdminChatPanel() {
         }
         const lastMsg = session.conversationHistory[session.conversationHistory.length - 1];
         return lastMsg.message.substring(0, 50) + (lastMsg.message.length > 50 ? '...' : '');
+    };
+
+    const formatMessageTime = (timestamp) => {
+        if (!timestamp) return '';
+
+        try {
+            const date = new Date(timestamp);
+            if (isNaN(date.getTime())) {
+                return '';
+            }
+            return date.toLocaleTimeString();
+        } catch (error) {
+            console.error('Error formatting message time:', error, timestamp);
+            return '';
+        }
     };
 
     return (
@@ -193,9 +264,6 @@ function AdminChatPanel() {
                                         <strong>
                                             {msg.role === 'ADMIN' ? 'You' : msg.username || msg.role}
                                         </strong>
-                                        <small className="text-muted ms-2">
-                                            {new Date(msg.timestamp).toLocaleTimeString()}
-                                        </small>
                                     </div>
                                     <div className="admin-message-content">
                                         {msg.message}
