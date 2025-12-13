@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +36,9 @@ public class MonitoringConsumerService {
     private final DeviceCacheRepository deviceCacheRepository;
     private final RabbitTemplate rabbitTemplate;
 
+    @Value("${monitoring.replica.id:1}")
+    private int replicaId;
+
     @Autowired
     public MonitoringConsumerService(HourlyConsumptionRepository consumptionRepository,
                                      SensorMeasurementRepository measurementRepository,
@@ -46,17 +50,18 @@ public class MonitoringConsumerService {
         this.rabbitTemplate = rabbitTemplate;
     }
 
-    @RabbitListener(queues = RabbitMQConfig.SENSOR_DATA_QUEUE)
+    @RabbitListener(queues = "#{@ingestQueueName}")
     @Transactional
     public void processSensorData(SensorDataDTO sensorData) {
-        log.info("Received sensor data: deviceId={}, timestamp={}, value={} kWh",
+        log.info("[REPLICA {}] Received sensor data: deviceId={}, timestamp={}, value={} kWh",
+                replicaId,
                 sensorData.getDeviceId(),
                 sensorData.getTimestamp(),
                 sensorData.getMeasurementValue());
 
         if (!deviceCacheRepository.existsById(sensorData.getDeviceId())) {
-            log.warn("REJECTED sensor data for unknown device: {}. Device not found in cache.",
-                    sensorData.getDeviceId());
+            log.warn("[REPLICA {}] REJECTED sensor data for unknown device: {}. Device not found in cache.",
+                    replicaId, sensorData.getDeviceId());
             return;
         }
 
@@ -66,7 +71,8 @@ public class MonitoringConsumerService {
         );
 
         if (exists) {
-            log.warn("REJECTED duplicate: deviceId={}, timestamp={}",
+            log.warn("[REPLICA {}] REJECTED duplicate: deviceId={}, timestamp={}",
+                    replicaId,
                     sensorData.getDeviceId(),
                     sensorData.getTimestamp());
             return;
@@ -86,15 +92,16 @@ public class MonitoringConsumerService {
                             Map<String, Object> wsData = new HashMap<>();
                             wsData.put("hour", hourlyData.getHour().toString());
                             wsData.put("totalConsumption", hourlyData.getTotalConsumption());
-                            wsData.put("deviceId", deviceId.toString()); // Adaugă deviceId pentru filtrare
+                            wsData.put("deviceId", deviceId.toString());
 
-                            log.info("Broadcasting HOURLY AGGREGATE for device {} hour: {}", deviceId, previousHour);
+                            log.info("[REPLICA {}] Broadcasting HOURLY AGGREGATE for device {} hour: {}",
+                                    replicaId, deviceId, previousHour);
                             publishMeasurementUpdate(deviceId, wsData);
                             log.info("WebSocket broadcast completed for hour: {}", previousHour);
 
                         } catch (Exception e) {
-                            log.error("Failed to broadcast WebSocket message for {}: {}", deviceId, e.getMessage(), e);
-                        }
+                            log.error("[REPLICA {}] Failed to broadcast WebSocket message for {}: {}",
+                                    replicaId, deviceId, e.getMessage(), e);                        }
                     });
         }
     }
@@ -107,7 +114,8 @@ public class MonitoringConsumerService {
         );
         SensorMeasurement savedMeasurement = measurementRepository.save(measurement);
 
-        log.info("Saved individual measurement: id={}, deviceId={}, timestamp={}, value={} kWh",
+        log.info("[REPLICA {}] Saved measurement: id={}, deviceId={}, timestamp={}, value={} kWh",
+                replicaId,
                 savedMeasurement.getId(),
                 savedMeasurement.getDeviceId(),
                 savedMeasurement.getTimestamp(),
@@ -128,7 +136,8 @@ public class MonitoringConsumerService {
                 deviceId, hourStart, hourEnd);
 
         if (measurements.isEmpty()) {
-            log.debug("No measurements found for device {} in hour {}", deviceId, hourTimestamp);
+            log.debug("[REPLICA {}] No measurements found for device {} in hour {}",
+                    replicaId, deviceId, hourTimestamp);
             return;
         }
 
@@ -144,8 +153,8 @@ public class MonitoringConsumerService {
 
         HourlyEnergyConsumption saved = consumptionRepository.save(hourlyData);
 
-        log.info("Created hourly aggregate for COMPLETED hour: id={}, deviceId={}, hour={}, total={} kWh",
-                saved.getId(), saved.getDeviceId(), saved.getHour(), saved.getTotalConsumption());
+        log.info("[REPLICA {}] HOURLY AGGREGATE CREATED: device={}, hour={}, consumption={} kWh, measurements={}",
+                replicaId, deviceId, hourTimestamp, totalConsumption, measurements.size());
 
         checkOverconsumptionForCompletedHour(deviceId, hourTimestamp, totalConsumption);
     }
@@ -160,8 +169,8 @@ public class MonitoringConsumerService {
         Double maxConsumption = deviceCache.getMaxConsumption();
 
         if (totalConsumption > maxConsumption) {
-            log.warn("OVERCONSUMPTION DETECTED! Device {}: {} kWh exceeds limit of {} kWh for hour {}",
-                    deviceId, totalConsumption, maxConsumption, hourTimestamp);
+            log.warn("[REPLICA {}] OVERCONSUMPTION! Device {}: {} kWh > {} kWh (hour {})",
+                    replicaId, deviceId, totalConsumption, maxConsumption, hourTimestamp);
 
             Map<String, Object> alert = new HashMap<>();
             alert.put("type", "OVERCONSUMPTION");
@@ -195,9 +204,9 @@ public class MonitoringConsumerService {
                     message
             );
 
-            log.info("Published ALERT to CommunicationService: userId={}, deviceId={}", userId, deviceId);
+            log.info("[REPLICA {}] Published ALERT: userId={}, deviceId={}", replicaId, userId, deviceId);
         } catch (Exception e) {
-            log.error("Failed to publish alert: {}", e.getMessage(), e);
+            log.error("[REPLICA {}] Failed to publish alert: {}", replicaId, e.getMessage(), e);
         }
     }
 
@@ -214,16 +223,16 @@ public class MonitoringConsumerService {
                     message
             );
 
-            log.info("Published MEASUREMENT update to CommunicationService: deviceId={}", deviceId);
+            log.info("[REPLICA {}] Published MEASUREMENT: deviceId={}", replicaId, deviceId);
         } catch (Exception e) {
-            log.error("Failed to publish measurement update: {}", e.getMessage(), e);
+            log.error("[REPLICA {}] Failed to publish measurement: {}", replicaId, e.getMessage(), e);
         }
     }
 
     @RabbitListener(queues = RabbitMQConfig.MONITORING_SYNC_QUEUE)
     @Transactional
     public void handleSyncMessage(SyncMessageDTO message) {
-        log.info("Monitoring received sync message: {}", message.getEventType());
+        log.info("[REPLICA {}] Received sync message: {}", replicaId, message.getEventType());
 
         try {
             switch (message.getEventType()) {
@@ -242,19 +251,11 @@ public class MonitoringConsumerService {
                 case "DEVICE_UNASSIGNED":
                     handleDeviceUnassigned(message.getDeviceId());
                     break;
-
-                case "USER_CREATED":
-                case "USER_ID_ASSIGNED":
-                case "USER_CREATE_FAILED":
-                case "USER_DELETED":
-                    log.debug("Ignoring user event: {}", message.getEventType());
-                    break;
-
                 default:
-                    log.warn("Unknown event type: {}", message.getEventType());
+                    log.debug("[REPLICA {}] Ignoring event: {}", replicaId, message.getEventType());
             }
         } catch (Exception e) {
-            log.error("Failed to process sync message: {}", e.getMessage(), e);
+            log.error("[REPLICA {}] Failed to process sync message: {}", replicaId, e.getMessage(), e);
             throw e;
         }
     }
@@ -262,7 +263,7 @@ public class MonitoringConsumerService {
     private void handleDeviceCreated(SyncMessageDTO message) {
         try {
             if (deviceCacheRepository.existsById(message.getDeviceId())) {
-                log.info("Device {} already in cache (idempotent operation)", message.getDeviceId());
+                log.info("[REPLICA {}] Device {} already in cache", replicaId, message.getDeviceId());
                 return;
             }
 
@@ -272,10 +273,10 @@ public class MonitoringConsumerService {
                     message.getMaxConsumption()
             );            deviceCacheRepository.save(cache);
 
-            log.info("Device {} added to cache", message.getDeviceId());
+            log.info("[REPLICA {}] Device {} added to cache", replicaId, message.getDeviceId());
 
         } catch (Exception e) {
-            log.error("Failed to add device {} to cache: {}", message.getDeviceId(), e.getMessage());
+            log.error("[REPLICA {}] Failed to add device {}: {}", replicaId, message.getDeviceId(), e.getMessage());
             throw e;
         }
     }
@@ -285,18 +286,16 @@ public class MonitoringConsumerService {
             DeviceCache cache = deviceCacheRepository.findById(message.getDeviceId()).orElse(null);
 
             if (cache == null) {
-                log.error("Device {} not found in cache, cannot assign user", message.getDeviceId());
+                log.error("[REPLICA {}] Device {} not found", replicaId, message.getDeviceId());
                 return;
             }
 
             cache.setUserId(message.getUserId());
             deviceCacheRepository.save(cache);
 
-            log.info("Device {} assigned to user {}", message.getDeviceId(), message.getUserId());
-
+            log.info("[REPLICA {}] Device {} assigned to user {}", replicaId, message.getDeviceId(), message.getUserId());
         } catch (Exception e) {
-            log.error("Failed to assign device {} to user {}: {}",
-                    message.getDeviceId(), message.getUserId(), e.getMessage());
+            log.error("[REPLICA {}] Failed to assign device: {}", replicaId, e.getMessage());
             throw e;
         }
     }
@@ -306,17 +305,16 @@ public class MonitoringConsumerService {
             DeviceCache cache = deviceCacheRepository.findById(deviceId).orElse(null);
 
             if (cache == null) {
-                log.warn("Device {} not found in cache", deviceId);
+                log.warn("[REPLICA {}] Device {} not found", replicaId, deviceId);
                 return;
             }
 
             cache.setUserId(null);
             deviceCacheRepository.save(cache);
 
-            log.info("Device {} unassigned from user", deviceId);
-
+            log.info("[REPLICA {}] Device {} unassigned", replicaId, deviceId);
         } catch (Exception e) {
-            log.error("Failed to unassign device {}: {}", deviceId, e.getMessage());
+            log.error("[REPLICA {}] Failed to unassign device: {}", replicaId, e.getMessage());
             throw e;
         }
     }
@@ -324,16 +322,15 @@ public class MonitoringConsumerService {
     private void handleDeviceDeleted(UUID deviceId) {
         try {
             deviceCacheRepository.deleteById(deviceId);
-            log.info("Device {} removed from cache", deviceId);
+            log.info("[REPLICA {}] Device {} removed from cache", replicaId, deviceId);
 
             int deletedMeasurements = measurementRepository.deleteByDeviceId(deviceId);
-            log.info("Deleted {} individual measurements for device {}", deletedMeasurements, deviceId);
+            log.info("[REPLICA {}] Deleted {} measurements for device {}", replicaId, deletedMeasurements, deviceId);
 
             int deletedAggregates = consumptionRepository.deleteByDeviceId(deviceId);
-            log.info("Deleted {} hourly aggregates for device {}", deletedAggregates, deviceId);
-
+            log.info("[REPLICA {}] Deleted {} aggregates for device {}", replicaId, deletedAggregates, deviceId);
         } catch (Exception e) {
-            log.error("Failed to handle device deletion for {}: {}", deviceId, e.getMessage());
+            log.error("[REPLICA {}] Failed to handle device deletion: {}", replicaId, e.getMessage());
             throw e;
         }
     }

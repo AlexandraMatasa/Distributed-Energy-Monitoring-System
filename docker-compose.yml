@@ -3,7 +3,6 @@ version: '3.9'
 services:
   user-db:
     image: postgres:16
-    container_name: user-db
     restart: always
     environment:
       POSTGRES_USER: postgres
@@ -15,10 +14,24 @@ services:
       - user-db-data:/var/lib/postgresql/data
     networks:
       - proxy-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
 
   device-db:
     image: postgres:16
-    container_name: device-db
     restart: always
     environment:
       POSTGRES_USER: postgres
@@ -30,10 +43,24 @@ services:
       - device-db-data:/var/lib/postgresql/data
     networks:
       - proxy-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
 
   auth-db:
     image: postgres:16
-    container_name: auth-db
     restart: always
     environment:
       POSTGRES_USER: postgres
@@ -45,10 +72,24 @@ services:
       - auth-db-data:/var/lib/postgresql/data
     networks:
       - proxy-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
 
   monitoring-db:
     image: postgres:16
-    container_name: monitoring-db
     restart: always
     environment:
       POSTGRES_USER: postgres
@@ -60,11 +101,25 @@ services:
       - monitoring-db-data:/var/lib/postgresql/data
     networks:
       - proxy-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
 
 
   rabbitmq:
     image: rabbitmq:3-management
-    container_name: rabbitmq
     restart: always
     ports:
       - "5672:5672"
@@ -79,22 +134,25 @@ services:
       - proxy-network
     healthcheck:
       test: rabbitmq-diagnostics -q ping
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 40s
-
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
 
   user-service:
     build:
       context: ./UserManagement
       dockerfile: Dockerfile
-    container_name: user-service
-    depends_on:
-      user-db:
-        condition: service_started
-      rabbitmq:
-        condition: service_healthy
+    image: localhost/user-service:latest
     environment:
       DB_IP: user-db
       DB_PORT: 5432
@@ -107,19 +165,23 @@ services:
       RABBITMQ_PASSWORD: kalo
     networks:
       - proxy-network
-    labels:
-      - "traefik.enable=true"
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.user-service.rule=PathPrefix(`/api1`)"
+        - "traefik.http.routers.user-service.entrypoints=web"
+        - "traefik.http.services.user-service.loadbalancer.server.port=8080"
 
   device-service:
     build:
       context: ./DeviceManagement
       dockerfile: Dockerfile
-    container_name: device-service
-    depends_on:
-      device-db:
-        condition: service_started
-      rabbitmq:
-        condition: service_healthy
+    image: localhost/device-service:latest
     environment:
       DB_IP: device-db
       DB_PORT: 5432
@@ -132,19 +194,23 @@ services:
       RABBITMQ_PASSWORD: kalo
     networks:
       - proxy-network
-    labels:
-      - "traefik.enable=true"
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.device-service.rule=PathPrefix(`/api2`)"
+        - "traefik.http.routers.device-service.entrypoints=web"
+        - "traefik.http.services.device-service.loadbalancer.server.port=8081"
 
   auth-service:
     build:
       context: ./AuthManagement
       dockerfile: Dockerfile
-    container_name: auth-service
-    depends_on:
-      auth-db:
-        condition: service_started
-      rabbitmq:
-        condition: service_healthy
+    image: localhost/auth-service:latest
     environment:
       DB_IP: auth-db
       DB_PORT: 5432
@@ -157,19 +223,23 @@ services:
       RABBITMQ_PASSWORD: kalo
     networks:
       - proxy-network
-    labels:
-      - "traefik.enable=true"
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.auth-service.rule=PathPrefix(`/api3`)"
+        - "traefik.http.routers.auth-service.entrypoints=web"
+        - "traefik.http.services.auth-service.loadbalancer.server.port=8083"
 
   monitoring-service:
     build:
       context: ./MonitoringService
       dockerfile: Dockerfile
-    container_name: monitoring-service
-    depends_on:
-      monitoring-db:
-        condition: service_started
-      rabbitmq:
-        condition: service_healthy
+    image: localhost/monitoring-service:latest
     environment:
       DB_IP: monitoring-db
       DB_PORT: 5432
@@ -180,21 +250,31 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USER: kalo
       RABBITMQ_PASSWORD: kalo
-    ports:
-      - "8084:8084"
+      REPLICA_ID: "{{.Task.Slot}}"
+      PORT: 8084
+
     networks:
       - proxy-network
-    labels:
-      - "traefik.enable=true"
+    deploy:
+      replicas: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 15s
+        max_attempts: 5
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.monitoring-service.rule=PathPrefix(`/api4`)"
+        - "traefik.http.routers.monitoring-service.entrypoints=web"
+        - "traefik.http.services.monitoring-service.loadbalancer.server.port=8084"
 
   communication-service:
     build:
       context: ./CommunicationService
       dockerfile: Dockerfile
-    container_name: communication-service
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
+    image: localhost/communication-service:latest
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
@@ -202,35 +282,79 @@ services:
       RABBITMQ_PASSWORD: kalo
       PORT: 8085
     ports:
-      - "8085:8085"
+      - target: 8085
+        published: 8085
+        protocol: tcp
+        mode: host
     networks:
       - proxy-network
-    labels:
-      - "traefik.enable=true"
-    restart: unless-stopped
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.communication-service.rule=PathPrefix(`/api5`)"
+        - "traefik.http.routers.communication-service.entrypoints=web"
+        - "traefik.http.services.communication-service.loadbalancer.server.port=8085"
+
+  loadbalancer-service:
+    build:
+      context: ./LoadBalancerService
+      dockerfile: Dockerfile
+    image: localhost/loadbalancer-service:latest
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: kalo
+      RABBITMQ_PASSWORD: kalo
+      REPLICA_COUNT: 3
+    networks:
+      - proxy-network
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 15s
+        max_attempts: 5
+      labels:
+        - "traefik.enable=false"
 
   frontend:
     build:
       context: ./Frontend/energy-management-app
       dockerfile: Dockerfile
-    container_name: frontend
-    restart: always
+    image: localhost/frontend:latest
     networks:
       - proxy-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.frontend.rule=Host(`localhost`)"
-      - "traefik.http.routers.frontend.entrypoints=web"
-      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.frontend.rule=Host(`localhost`)"
+        - "traefik.http.routers.frontend.entrypoints=web"
+        - "traefik.http.services.frontend.loadbalancer.server.port=80"
 
   traefik:
     image: traefik:v3.0
-    container_name: traefik
-    restart: always
     ports:
-      - "80:80" # The HTTP port
-      # - "443:443" # The HTTPS port
-      - "8082:8080" # Dashboard port
+      - target: 80
+        published: 80
+        protocol: tcp
+        mode: host
+      - target: 8080
+        published: 8082
+        protocol: tcp
+        mode: host
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro" # Traefik can listen to the Docker events
       - "./traefik.yml:/etc/traefik/traefik.yml:ro" # Static configuration file
@@ -238,12 +362,19 @@ services:
       - "./logs:/var/log/traefik" # Log files
     networks:
       - proxy-network
-
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      restart_policy:
+        condition: on-failure
 
 # Define a shared network for all services
 networks:
   proxy-network:
-    driver: bridge
+    driver: overlay
+    attachable: true
 
 volumes:
   user-db-data:
