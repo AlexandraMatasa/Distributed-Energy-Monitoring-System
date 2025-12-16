@@ -152,7 +152,7 @@ services:
     build:
       context: ./UserManagement
       dockerfile: Dockerfile
-    image: localhost/user-service:latest
+    image: user-service:latest
     environment:
       DB_IP: user-db
       DB_PORT: 5432
@@ -181,7 +181,7 @@ services:
     build:
       context: ./DeviceManagement
       dockerfile: Dockerfile
-    image: localhost/device-service:latest
+    image: device-service:latest
     environment:
       DB_IP: device-db
       DB_PORT: 5432
@@ -210,7 +210,7 @@ services:
     build:
       context: ./AuthManagement
       dockerfile: Dockerfile
-    image: localhost/auth-service:latest
+    image: auth-service:latest
     environment:
       DB_IP: auth-db
       DB_PORT: 5432
@@ -239,7 +239,7 @@ services:
     build:
       context: ./MonitoringService
       dockerfile: Dockerfile
-    image: localhost/monitoring-service:latest
+    image: monitoring-service:latest
     environment:
       DB_IP: monitoring-db
       DB_PORT: 5432
@@ -274,7 +274,7 @@ services:
     build:
       context: ./CommunicationService
       dockerfile: Dockerfile
-    image: localhost/communication-service:latest
+    image: communication-service:latest
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
@@ -307,7 +307,7 @@ services:
     build:
       context: ./LoadBalancerService
       dockerfile: Dockerfile
-    image: localhost/loadbalancer-service:latest
+    image: loadbalancer-service:latest
     environment:
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
@@ -329,7 +329,7 @@ services:
     build:
       context: ./Frontend/energy-management-app
       dockerfile: Dockerfile
-    image: localhost/frontend:latest
+    image: frontend:latest
     networks:
       - proxy-network
     deploy:

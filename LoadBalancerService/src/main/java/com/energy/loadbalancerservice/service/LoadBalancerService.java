@@ -59,10 +59,11 @@ public class LoadBalancerService {
     }
 
     private int selectReplica(UUID deviceId) {
-        int hash = Math.abs(deviceId.hashCode());
+        int hash = deviceId.hashCode();
 
-        int replicaIndex = hash % replicaCount;
+        int positiveHash = hash & Integer.MAX_VALUE;
 
+        int replicaIndex = positiveHash % replicaCount;
         log.debug("Consistent hashing: deviceId={} → hash={} → replica={}",
                 deviceId, hash, replicaIndex);
 
