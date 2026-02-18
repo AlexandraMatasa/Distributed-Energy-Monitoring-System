@@ -1,0 +1,66 @@
+spring.application.name=AuthManagement
+
+###############################################
+### RABBITMQ CONFIGURATION ###
+###############################################
+spring.rabbitmq.host=${RABBITMQ_HOST:localhost}
+spring.rabbitmq.port=${RABBITMQ_PORT:5672}
+spring.rabbitmq.username=${RABBITMQ_USER:guest}
+spring.rabbitmq.password=${RABBITMQ_PASSWORD:guest}
+
+###############################################
+### Swagger ###
+###############################################
+springdoc.swagger-ui.urls[0].url=http://localhost/api3/v3/api-docs
+springdoc.swagger-ui.urls[0].name=Auth Service
+
+springdoc.swagger-ui.urls[1].url=http://localhost/api1/v3/api-docs
+springdoc.swagger-ui.urls[1].name=User Service
+
+springdoc.swagger-ui.urls[2].url=http://localhost/api2/v3/api-docs
+springdoc.swagger-ui.urls[2].name=Device Service
+
+springdoc.swagger-ui.disable-swagger-default-url=true
+springdoc.api-docs.path=/v3/api-docs
+server.forward-headers-strategy=framework
+
+###############################################
+### JWT ###
+###############################################
+jwt.private-key=-----BEGIN PRIVATE KEY-----\nBASE64_ENCODED_PRIVATE_KEY\n-----END PRIVATE KEY-----
+
+jwt.public-key=-----BEGIN PUBLIC KEY-----\nBASE64_ENCODED_PUBLIC_KEY\n-----END PUBLIC KEY-----
+
+jwt.expiration=86400000
+
+###############################################
+# DATABASE CONNECTIVITY
+###############################################
+database.ip=${DB_IP:localhost}
+database.port=${DB_PORT:5432}
+database.user=${DB_USER:postgres}
+database.password=${DB_PASSWORD:admin}
+database.name=${DB_DBNAME:auth-db}
+
+spring.sql.init.platform=postgres
+spring.datasource.url=jdbc:postgresql://${database.ip}:${database.port}/${database.name}
+spring.datasource.username=${database.user}
+spring.datasource.password=${database.password}
+
+# Hibernate ddl auto (create, create-drop, validate, update)
+spring.jpa.hibernate.ddl-auto = update
+spring.jpa.open-in-view=false
+spring.jpa.properties.hibernate.show_sql=true
+server.tomcat.threads.max = 1
+
+###############################################
+### LOGGING CONFIGURATIONS ###
+###############################################
+logging.level.root=warn
+logging.level.org.springframework=warn
+logging.level.ro.tuc=warn
+
+###############################################
+### EMBEDDED TOMCAT CONFIGURATIONS ###
+###############################################
+server.port=${PORT:8083}

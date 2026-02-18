@@ -1,3 +1,17 @@
-.idea/**
-**/target/**
-logs/
+# IDE and Tooling
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Build artifacts
+**/target/
+**/build/
+**/out/
+
+# Log files
+**/logs/
+*.log
+
+**/src/main/resources/application.properties
+!**/src/main/resources/application.properties.example
