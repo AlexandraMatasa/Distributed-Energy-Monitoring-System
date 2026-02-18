@@ -1,4 +1,4 @@
-# DS2025_30241_Matasa_Alexandra_Assignment_3
+# Energy Management System
 
 ## Overview
 This project is an **Energy Management System** which allows authenticated users to monitor and manage smart energy metering devices. It is built using a microservice architecture with event-driven communication through RabbitMQ, orchestrated with Docker Swarm and Traefik as a reverse proxy/API gateway.
@@ -6,6 +6,17 @@ This project is an **Energy Management System** which allows authenticated users
 The application supports two user roles:
 * **Administrator**: Can perform full CRUD operations on users and devices, manage user-device assignments, and engage in real-time chat with clients.
 * **Client**: Can log in, view assigned smart energy devices, monitor real-time energy consumption, and interact with AI-driven/Rule-based Customer Support.
+
+## Screenshots
+
+<p align="center">
+  <img src=".github/assets/image1.png" width="800">
+  <img src=".github/assets/image2.png" width="800">
+  <img src=".github/assets/image3.png" width="800">
+  <img src=".github/assets/image4.png" width="800">
+  <img src=".github/assets/image5.png" width="800">
+  <img src=".github/assets/image8.png" width="800">
+</p>
 
 ## System Architecture
 
@@ -22,20 +33,20 @@ The backend consists of the API Gateway, specialized microservices, and their de
 
 * **API Gateway (Traefik)**
   * Acts as the single entry point for all system requests, listening on port `80`.
-  * Routes incoming traffic to the correct microservice based on URL paths (e.g., `/api1`, `/api2`, `/api3`, `/api4`, `/api5`).
+  * Routes incoming traffic to the correct microservice based on URL paths.
   * Handles security by using `forwardAuth` to validate JWT tokens via the Auth Service for protected routes.
 
 
 * **Microservices Layer**
-  * **Auth Management Service (`/api3`)**: Responsible for user login and registration. It stores credentials in its own `auth-db` and generates JWT tokens for authenticated users.<br><br>
+  * **Auth Management Service**: Responsible for user login and registration. It stores credentials in its own `auth-db` and generates JWT tokens for authenticated users.<br><br>
 
-  * **User Management Service (`/api1`)**: Manages all user data (ID, username, etc.). It provides full CRUD operations for user accounts and stores data in the `user-db`. <br><br>
+  * **User Management Service**: Manages all user data (ID, username, etc.). It provides full CRUD operations for user accounts and stores data in the `user-db`. <br><br>
 
-  * **Device Management Service (`/api2`)**: Manages all smart device data (ID, name, max consumption). It provides CRUD operations for devices and handles the assignment of devices to users, storing data in the `device-db`.
+  * **Device Management Service**: Manages all smart device data (ID, name, max consumption). It provides CRUD operations for devices and handles the assignment of devices to users, storing data in the `device-db`.
 
-  * **Monitoring Service (`/api4`)**: Deployed with 3 replicas. Processes real-time sensor measurements from smart metering devices and computes hourly energy consumption totals. It consumes sensor data from RabbitMQ queues, validates device existence, stores individual measurements, and aggregates them into hourly totals in the `monitoring-db`.
+  * **Monitoring Service**: Deployed with 3 replicas. Processes real-time sensor measurements from smart metering devices and computes hourly energy consumption totals. It consumes sensor data from RabbitMQ queues, validates device existence, stores individual measurements, and aggregates them into hourly totals in the `monitoring-db`.
 
-  * **Communication & Chat Service (`/api5`)**: Provides bidirectional real-time messaging using WebSockets. Includes a Rule-based Chatbot and AI-Driven Support using the Groq API (Llama 3.3 70B) to assist users with energy-related queries.
+  * **Communication & Chat Service**: Provides bidirectional real-time messaging using WebSockets. Includes a Rule-based Chatbot and AI-Driven Support using the Groq API (Llama 3.3 70B) to assist users with energy-related queries.
 
 
 * **Databases**
@@ -48,7 +59,7 @@ The backend consists of the API Gateway, specialized microservices, and their de
   * Uses a **Direct Exchange** (`sensor_exchange`) to route simulator data to the central `device_measurements` queue.
   * Manages dedicated queues for each service: `auth_sync_queue`, `user_sync_queue`, `device_sync_queue`, `monitoring_sync_queue`, and `device_measurements`.
   * **Websocket Exchange** routes alert and measurement notifications to the frontend.
-  * Accessible via management UI at `http://localhost:15672` (credentials: `kalo/kalo`).
+  * Accessible via management UI at `http://localhost:15672`.
 
 
 * **Device Data Simulator**
